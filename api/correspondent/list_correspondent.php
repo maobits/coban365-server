@@ -11,7 +11,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 // Configuración de la base de datos
-require_once './db.php';
+require_once '../db.php';
 
 header('Content-Type: application/json');
 

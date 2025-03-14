@@ -21,7 +21,7 @@ if ($_SERVER["REQUEST_METHOD"] == "OPTIONS") {
 }
 
 // Incluir la conexión a la base de datos
-require_once "db.php";
+require_once "../db.php";
 
 // Verificar que la solicitud sea de tipo GET
 if ($_SERVER["REQUEST_METHOD"] == "GET") {

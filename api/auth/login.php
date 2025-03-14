@@ -20,7 +20,7 @@ if ($_SERVER["REQUEST_METHOD"] == "OPTIONS") {
     exit;
 }
 
-require_once "db.php"; // Incluye la conexión a la base de datos
+require_once "../db.php"; // Incluye la conexión a la base de datos
 
 // Verifica si se han recibido los datos de la solicitud (POST)
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
