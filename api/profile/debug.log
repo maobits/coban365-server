@@ -1,0 +1,18 @@
+Array
+(
+    [id] => 1
+    [email] => admin@maobits.com
+    [fullname] => Mauricio Chara
+    [phone] => 3153774638
+    [status] => 1
+    [role] => superadmin
+    [permissions] => Array
+        (
+            [0] => manageCorrespondents
+            [1] => manageAdministrators
+            [2] => manageReports
+        )
+
+    [created_at] => 2025-03-08 21:10:05
+    [updated_at] => 2025-03-14 06:34:29
+)
