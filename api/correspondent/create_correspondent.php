@@ -39,6 +39,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $operator_id = intval($data["operator_id"]);
     $name = trim($data["name"]);
     $location = json_encode($data["location"], JSON_UNESCAPED_UNICODE); // Convertir ubicación a JSON
+    $transactions = isset($data["transactions"]) ? json_encode($data["transactions"], JSON_UNESCAPED_UNICODE) : json_encode([]); // Transacciones como JSON
 
     try {
         // Verificar si el código ya existe
@@ -51,13 +52,14 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         }
 
         // Insertar el nuevo corresponsal
-        $stmt = $pdo->prepare("INSERT INTO correspondents (type_id, code, operator_id, name, location) 
-                               VALUES (:type_id, :code, :operator_id, :name, :location)");
+        $stmt = $pdo->prepare("INSERT INTO correspondents (type_id, code, operator_id, name, location, transactions) 
+                               VALUES (:type_id, :code, :operator_id, :name, :location, :transactions)");
         $stmt->bindParam(":type_id", $type_id, PDO::PARAM_INT);
         $stmt->bindParam(":code", $code, PDO::PARAM_STR);
         $stmt->bindParam(":operator_id", $operator_id, PDO::PARAM_INT);
         $stmt->bindParam(":name", $name, PDO::PARAM_STR);
         $stmt->bindParam(":location", $location, PDO::PARAM_STR);
+        $stmt->bindParam(":transactions", $transactions, PDO::PARAM_STR);
 
         if ($stmt->execute()) {
             echo json_encode(["success" => true, "message" => "Corresponsal registrado exitosamente."]);

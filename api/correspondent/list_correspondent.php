@@ -4,7 +4,6 @@ header("Access-Control-Allow-Origin: *"); // Puedes cambiar * por un dominio esp
 header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type, Authorization");
 
-// Si la solicitud es de tipo OPTIONS (preflight), responder con 200 y salir
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
     exit();
@@ -20,12 +19,13 @@ try {
     $conn = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8", $username, $password);
     $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-    // Consulta para obtener los corresponsales con sus relaciones
+    // Consulta SQL incluyendo el campo `transactions`
     $sql = "SELECT 
                 c.id, 
                 c.code, 
                 c.name, 
                 c.location, 
+                c.transactions, -- ⬅️ Aquí incluimos el campo
                 c.created_at, 
                 c.updated_at,
                 -- Datos del tipo de corresponsal
@@ -43,12 +43,10 @@ try {
             LEFT JOIN users u ON c.operator_id = u.id
             ORDER BY c.id DESC";
 
-    // Ejecutar la consulta
     $stmt = $conn->prepare($sql);
     $stmt->execute();
     $correspondents = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // Responder con los datos
     echo json_encode([
         "success" => true,
         "data" => $correspondents
