@@ -4,8 +4,8 @@
  * Descripción: Devuelve todos los tipos de transacciones registrados.
  * Proyecto: COBAN365
  * Desarrollador: Mauricio Chara
- * Versión: 1.0.0
- * Fecha de creación: 23-Mar-2025
+ * Versión: 1.1.0
+ * Fecha de actualización: 12-Abr-2025
  */
 
 // Habilitar CORS para permitir solicitudes desde cualquier origen
@@ -29,16 +29,16 @@ try {
     $conn = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8", $username, $password);
     $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-    // Consulta para obtener los tipos de transacción
+    // Consulta para obtener los tipos de transacción (incluye polarity)
     $sql = "SELECT 
-            id,
-            name,
-            category,
-            created_at,
-            updated_at
-        FROM transaction_types
-        ORDER BY id DESC";
-
+                id,
+                name,
+                category,
+                polarity,
+                created_at,
+                updated_at
+            FROM transaction_types
+            ORDER BY id DESC";
 
     // Ejecutar la consulta
     $stmt = $conn->prepare($sql);

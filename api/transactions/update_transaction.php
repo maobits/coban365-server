@@ -1,11 +1,11 @@
 <?php
 /**
  * Archivo: update_transaction_type.php
- * Descripción: Actualiza un tipo de transacción en la base de datos.
+ * Descripción: Actualiza un tipo de transacción en la base de datos, incluyendo la polaridad.
  * Proyecto: COBAN365
  * Desarrollador: Mauricio Chara
- * Versión: 1.0.0
- * Fecha de creación: 23-Mar-2025
+ * Versión: 1.1.1
+ * Fecha de actualización: 12-Abr-2025
  */
 
 // Habilitar CORS
@@ -36,7 +36,8 @@ $data = json_decode(file_get_contents("php://input"), true);
 if (
     !isset($data['id']) ||
     !isset($data['name']) ||
-    !isset($data['category'])
+    !isset($data['category']) ||
+    !array_key_exists('polarity', $data) // 👈 Maneja explícitamente "false"
 ) {
     echo json_encode(["success" => false, "message" => "Faltan datos obligatorios"]);
     exit();
@@ -47,19 +48,21 @@ try {
     $conn = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8", $username, $password);
     $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-    // Consulta SQL para actualizar el tipo de transacción (sin descripción)
+    // Consulta SQL para actualizar
     $sql = "UPDATE transaction_types SET 
                 name = :name,
                 category = :category,
+                polarity = :polarity,
                 updated_at = NOW()
             WHERE id = :id";
 
     $stmt = $conn->prepare($sql);
 
     $stmt->execute([
-        ":id" => $data["id"],
+        ":id" => (int) $data["id"],
         ":name" => trim($data["name"]),
         ":category" => trim($data["category"]),
+        ":polarity" => $data["polarity"] ? 1 : 0, // ✅ Conversión segura y explícita
     ]);
 
     if ($stmt->rowCount() > 0) {
