@@ -1,19 +1,18 @@
 Array
 (
-    [id] => 4
-    [email] => maobitsllc@gmail.com
-    [fullname] => Mauricio Hurtado
-    [phone] => 3153774638
+    [id] => 9
+    [email] => usuario x
+    [fullname] => Pepe
+    [phone] => 12345678
     [status] => 1
-    [role] => admin
+    [role] => superadmin
     [permissions] => Array
         (
             [0] => manageCorrespondents
             [1] => manageCorrespondent
             [2] => manageAdministrators
-            [3] => manageReports
         )
 
-    [created_at] => 2025-03-31 05:46:38
-    [updated_at] => 2025-03-31 05:46:38
+    [created_at] => 2025-04-13 23:12:07
+    [updated_at] => 2025-04-13 23:12:07
 )
