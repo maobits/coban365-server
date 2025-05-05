@@ -1,11 +1,11 @@
 <?php
 /**
- * Archivo: update_transaction_type.php
- * Descripción: Actualiza un tipo de transacción en la base de datos, incluyendo la polaridad.
+ * Archivo: update_transaction.php
+ * Descripción: Permite actualizar una transacción existente en la base de datos, incluyendo referencia de cliente.
  * Proyecto: COBAN365
  * Desarrollador: Mauricio Chara
- * Versión: 1.1.1
- * Fecha de actualización: 12-Abr-2025
+ * Versión: 1.0.0
+ * Fecha de creación: 27-Abr-2025
  */
 
 // Habilitar CORS
@@ -14,13 +14,13 @@ header("Access-Control-Allow-Methods: POST, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type, Authorization");
 header("Content-Type: application/json");
 
-// Manejo de solicitudes OPTIONS
+// Manejo de solicitudes OPTIONS (Preflight)
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
     exit();
 }
 
-// Incluir configuración de la base de datos
+// Incluir configuración de base de datos
 require_once '../db.php';
 
 // Verificar tipo de solicitud
@@ -29,48 +29,66 @@ if ($_SERVER["REQUEST_METHOD"] !== "POST") {
     exit();
 }
 
-// Capturar y decodificar los datos JSON
+// Capturar los datos enviados
 $data = json_decode(file_get_contents("php://input"), true);
 
-// Validar campos requeridos
+// Validar que existan los campos principales
 if (
     !isset($data['id']) ||
-    !isset($data['name']) ||
-    !isset($data['category']) ||
-    !array_key_exists('polarity', $data) // 👈 Maneja explícitamente "false"
+    !isset($data['id_cashier']) ||
+    !isset($data['id_cash']) ||
+    !isset($data['id_correspondent']) ||
+    !isset($data['transaction_type_id']) ||
+    !isset($data['polarity']) ||
+    !isset($data['cost']) ||
+    !isset($data['state']) ||
+    !isset($data['note']) ||
+    !isset($data['client_reference']) // Nuevo campo obligatorio
 ) {
     echo json_encode(["success" => false, "message" => "Faltan datos obligatorios"]);
     exit();
 }
 
 try {
-    // Conexión
+    // Crear conexión
     $conn = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8", $username, $password);
     $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
     // Consulta SQL para actualizar
-    $sql = "UPDATE transaction_types SET 
-                name = :name,
-                category = :category,
+    $sql = "UPDATE transactions SET 
+                id_cashier = :id_cashier,
+                id_cash = :id_cash,
+                id_correspondent = :id_correspondent,
+                transaction_type_id = :transaction_type_id,
                 polarity = :polarity,
+                cost = :cost,
+                state = :state,
+                note = :note,
+                client_reference = :client_reference,
                 updated_at = NOW()
             WHERE id = :id";
 
     $stmt = $conn->prepare($sql);
 
     $stmt->execute([
-        ":id" => (int) $data["id"],
-        ":name" => trim($data["name"]),
-        ":category" => trim($data["category"]),
-        ":polarity" => $data["polarity"] ? 1 : 0, // ✅ Conversión segura y explícita
+        ':id' => (int) $data['id'],
+        ':id_cashier' => (int) $data['id_cashier'],
+        ':id_cash' => (int) $data['id_cash'],
+        ':id_correspondent' => (int) $data['id_correspondent'],
+        ':transaction_type_id' => (int) $data['transaction_type_id'],
+        ':polarity' => $data['polarity'] ? 1 : 0,
+        ':cost' => floatval($data['cost']),
+        ':state' => $data['state'] ? 1 : 0,
+        ':note' => trim($data['note']),
+        ':client_reference' => trim($data['client_reference']),
     ]);
 
     if ($stmt->rowCount() > 0) {
-        echo json_encode(["success" => true, "message" => "Tipo de transacción actualizado exitosamente"]);
+        echo json_encode(["success" => true, "message" => "Transacción actualizada correctamente."]);
     } else {
-        echo json_encode(["success" => false, "message" => "No se realizaron cambios o el registro no existe"]);
+        echo json_encode(["success" => false, "message" => "No se realizaron cambios o la transacción no existe."]);
     }
 } catch (PDOException $e) {
-    echo json_encode(["success" => false, "message" => "Error en la actualización: " . $e->getMessage()]);
+    echo json_encode(["success" => false, "message" => "Error al actualizar: " . $e->getMessage()]);
 }
 ?>

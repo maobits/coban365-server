@@ -1,11 +1,11 @@
 <?php
 /**
  * Archivo: create_transaction_type.php
- * Descripción: Permite registrar un nuevo tipo de transacción en la base de datos, incluyendo la polaridad.
+ * Descripción: Permite registrar un nuevo tipo de transacción en la base de datos, incluyendo la polaridad y client_reference.
  * Proyecto: COBAN365
  * Desarrollador: Mauricio Chara
- * Versión: 1.1.0
- * Fecha de actualización: 12-Abr-2025
+ * Versión: 1.2.0
+ * Fecha de actualización: 27-Abr-2025
  */
 
 // Permitir solicitudes desde cualquier origen (CORS)
@@ -38,7 +38,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
     $category = trim($data["category"]);
     $name = trim($data["name"]);
-    $polarity = boolval($data["polarity"]); // Se asegura que sea booleano
+    $polarity = boolval($data["polarity"]); // Asegura valor booleano
+    $client_reference = isset($data["client_reference"]) ? trim($data["client_reference"]) : null; // Campo opcional
 
     try {
         // Verificar duplicado
@@ -52,11 +53,15 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             exit;
         }
 
-        // Insertar nuevo tipo
-        $stmt = $pdo->prepare("INSERT INTO transaction_types (category, name, polarity) VALUES (:category, :name, :polarity)");
+        // Insertar nuevo tipo de transacción
+        $stmt = $pdo->prepare("
+            INSERT INTO transaction_types (category, name, polarity, client_reference)
+            VALUES (:category, :name, :polarity, :client_reference)
+        ");
         $stmt->bindParam(":category", $category, PDO::PARAM_STR);
         $stmt->bindParam(":name", $name, PDO::PARAM_STR);
         $stmt->bindParam(":polarity", $polarity, PDO::PARAM_BOOL);
+        $stmt->bindParam(":client_reference", $client_reference, PDO::PARAM_STR);
 
         if ($stmt->execute()) {
             echo json_encode(["success" => true, "message" => "Tipo de transacción registrado exitosamente."]);
