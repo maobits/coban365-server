@@ -38,6 +38,7 @@ try {
                 c.location, 
                 c.transactions,
                 c.state,
+                c.credit_limit, -- ✅ Campo nuevo agregado
                 c.created_at, 
                 c.updated_at,
                 t.id AS type_id, 

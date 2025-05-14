@@ -38,7 +38,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
     try {
         // Consulta para obtener el usuario por su correo electrónico
-        $stmt = $pdo->prepare("SELECT id, email, password, role, status FROM users WHERE email = :email");
+        $stmt = $pdo->prepare("SELECT id, email, fullname, role, status, password FROM users WHERE email = :email");
         $stmt->bindParam(":email", $email, PDO::PARAM_STR);
         $stmt->execute();
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -58,10 +58,12 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 "user" => [
                     "id" => $user["id"],
                     "email" => $user["email"],
+                    "fullname" => $user["fullname"],
                     "role" => $user["role"],
                     "status" => $user["status"]
                 ]
             ]);
+
         } else {
             // Credenciales incorrectas
             echo json_encode(["success" => false, "message" => "Correo o contraseña incorrectos."]);

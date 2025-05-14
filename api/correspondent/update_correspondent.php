@@ -44,13 +44,14 @@ $operator_id = $data['operator_id'];
 $name = trim($data['name']);
 $location = json_encode($data['location'], JSON_UNESCAPED_UNICODE);
 $transactions = isset($data['transactions']) ? json_encode($data['transactions'], JSON_UNESCAPED_UNICODE) : null;
+$credit_limit = isset($data['credit_limit']) ? intval($data['credit_limit']) : 0;
 
 try {
     // Conectar a la base de datos
     $conn = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8", $username, $password);
     $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-    // Consulta con transacciones incluidas
+    // Consulta con credit_limit incluido
     $sql = "UPDATE correspondents SET 
                 type_id = :type_id, 
                 code = :code, 
@@ -58,6 +59,7 @@ try {
                 name = :name, 
                 location = :location,
                 transactions = :transactions,
+                credit_limit = :credit_limit,
                 updated_at = NOW()
             WHERE id = :id";
 
@@ -71,6 +73,7 @@ try {
         ":name" => $name,
         ":location" => $location,
         ":transactions" => $transactions,
+        ":credit_limit" => $credit_limit,
     ]);
 
     if ($stmt->rowCount() > 0) {

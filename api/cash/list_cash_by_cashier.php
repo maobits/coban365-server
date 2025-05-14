@@ -4,8 +4,8 @@
  * Descripción: Retorna las cajas asociadas a un cajero específico.
  * Proyecto: COBAN365
  * Desarrollador: Mauricio Chara
- * Versión: 1.0.0
- * Fecha de creación: 28-Abr-2025
+ * Versión: 1.1.0
+ * Fecha de actualización: 11-May-2025
  */
 
 // Habilitar CORS
@@ -40,11 +40,14 @@ try {
 
     $sql = "SELECT 
                 ca.id,
-                 ca.name, -- ✅ campo agregado
+                ca.name,
                 ca.correspondent_id,
                 ca.cashier_id,
                 ca.capacity,
                 ca.state,
+                ca.open,
+                ca.balance,
+                ca.last_note,
                 ca.created_at,
                 ca.updated_at,
                 co.name AS correspondent_name,

@@ -49,6 +49,7 @@ try {
                 c.state, 
                 c.created_at, 
                 c.updated_at,
+                c.credit_limit,
                 t.id AS type_id, 
                 t.name AS type_name, 
                 t.description AS type_description, 
