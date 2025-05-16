@@ -4,8 +4,8 @@
  * Descripción: Permite actualizar los datos de un tercero (other).
  * Proyecto: COBAN365
  * Desarrollador: Mauricio Chara
- * Versión: 1.0.0
- * Fecha de creación: 12-Abr-2025
+ * Versión: 1.1.0
+ * Fecha de actualización: 16-May-2025
  */
 
 // Habilitar CORS
@@ -34,11 +34,7 @@ $data = json_decode(file_get_contents("php://input"), true);
 
 // Validar campos obligatorios
 if (
-    !isset($data["id"]) ||
-    !isset($data["correspondent_id"]) ||
-    !isset($data["name"]) ||
-    !isset($data["credit"]) ||
-    !isset($data["state"])
+    !isset($data["id"], $data["correspondent_id"], $data["name"], $data["credit"], $data["state"])
 ) {
     echo json_encode(["success" => false, "message" => "Faltan datos obligatorios."]);
     exit();
@@ -50,6 +46,13 @@ $name = trim($data["name"]);
 $credit = floatval($data["credit"]);
 $state = intval($data["state"]);
 
+// Nuevos campos opcionales
+$id_type = isset($data["id_type"]) ? trim($data["id_type"]) : null;
+$id_number = isset($data["id_number"]) ? trim($data["id_number"]) : null;
+$email = isset($data["email"]) ? trim($data["email"]) : null;
+$phone = isset($data["phone"]) ? trim($data["phone"]) : null;
+$address = isset($data["address"]) ? trim($data["address"]) : null;
+
 try {
     $conn = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8", $username, $password);
     $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
@@ -59,6 +62,11 @@ try {
                 name = :name,
                 credit = :credit,
                 state = :state,
+                id_type = :id_type,
+                id_number = :id_number,
+                email = :email,
+                phone = :phone,
+                address = :address,
                 updated_at = NOW()
             WHERE id = :id";
 
@@ -69,6 +77,11 @@ try {
         ":name" => $name,
         ":credit" => $credit,
         ":state" => $state,
+        ":id_type" => $id_type,
+        ":id_number" => $id_number,
+        ":email" => $email,
+        ":phone" => $phone,
+        ":address" => $address,
     ]);
 
     if ($stmt->rowCount() > 0) {
@@ -82,3 +95,4 @@ try {
         "message" => "Error en la actualización: " . $e->getMessage()
     ]);
 }
+?>

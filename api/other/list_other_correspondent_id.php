@@ -4,8 +4,8 @@
  * Descripción: Retorna los terceros asociados a un corresponsal específico.
  * Proyecto: COBAN365
  * Desarrollador: Mauricio Chara
- * Versión: 1.0.0
- * Fecha de creación: 12-Abr-2025
+ * Versión: 1.1.0
+ * Fecha de actualización: 15-May-2025
  */
 
 // Habilitar CORS
@@ -42,6 +42,11 @@ try {
                 id,
                 correspondent_id,
                 name,
+                id_type,
+                id_number,
+                email,
+                phone,
+                address,
                 credit,
                 state,
                 created_at,
