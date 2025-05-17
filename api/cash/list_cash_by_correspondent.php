@@ -4,8 +4,8 @@
  * Descripción: Retorna las cajas asociadas a un corresponsal específico.
  * Proyecto: COBAN365
  * Desarrollador: Mauricio Chara
- * Versión: 1.0.0
- * Fecha de creación: 12-Abr-2025
+ * Versión: 1.1.1
+ * Fecha de actualización: 17-May-2025
  */
 
 // Habilitar CORS
@@ -42,8 +42,11 @@ try {
                 ca.id,
                 ca.correspondent_id,
                 ca.cashier_id,
+                ca.name, -- ✅ Se agregó el campo 'name'
                 ca.capacity,
                 ca.state,
+                ca.open,
+                ca.last_note,
                 ca.created_at,
                 ca.updated_at,
                 co.name AS correspondent_name,

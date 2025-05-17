@@ -4,8 +4,8 @@
  * Descripción: Retorna las cajas registradas filtradas por el corresponsal si se proporciona.
  * Proyecto: COBAN365
  * Desarrollador: Mauricio Chara
- * Versión: 1.0.1
- * Fecha de actualización: 04-Abr-2025
+ * Versión: 1.1.0
+ * Fecha de actualización: 16-May-2025
  */
 
 // Habilitar CORS
@@ -30,13 +30,15 @@ try {
     // Obtener el ID del corresponsal (GET o POST)
     $correspondent_id = $_GET['correspondent_id'] ?? $_POST['correspondent_id'] ?? null;
 
-    // Construir consulta SQL con o sin filtro
+    // Consulta base
     $sql = "SELECT 
                 ca.id,
                 ca.correspondent_id,
                 ca.cashier_id,
                 ca.capacity,
                 ca.state,
+                ca.open,
+                ca.last_note,
                 ca.created_at,
                 ca.updated_at,
                 co.name AS correspondent_name,
@@ -45,6 +47,7 @@ try {
             LEFT JOIN correspondents co ON ca.correspondent_id = co.id
             LEFT JOIN users u ON ca.cashier_id = u.id";
 
+    // Filtro por corresponsal si aplica
     if ($correspondent_id !== null) {
         $sql .= " WHERE ca.correspondent_id = :correspondent_id";
     }
@@ -53,7 +56,6 @@ try {
 
     $stmt = $conn->prepare($sql);
 
-    // Asignar valor si corresponde
     if ($correspondent_id !== null) {
         $stmt->bindParam(':correspondent_id', $correspondent_id, PDO::PARAM_INT);
     }

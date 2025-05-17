@@ -4,8 +4,8 @@
  * Descripción: Retorna todas las cajas (cash) registradas con sus detalles.
  * Proyecto: COBAN365
  * Desarrollador: Mauricio Chara
- * Versión: 1.0.0
- * Fecha de creación: 31-Mar-2025
+ * Versión: 1.1.0
+ * Fecha de actualización: 16-May-2025
  */
 
 // Habilitar CORS
@@ -34,6 +34,8 @@ try {
                 ca.cashier_id,
                 ca.capacity,
                 ca.state,
+                ca.open,
+                ca.last_note,
                 ca.created_at,
                 ca.updated_at,
                 co.name AS correspondent_name,
@@ -57,5 +59,3 @@ try {
         "message" => "Error en la consulta: " . $e->getMessage()
     ]);
 }
-
-

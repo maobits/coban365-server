@@ -46,7 +46,6 @@ try {
                 ca.capacity,
                 ca.state,
                 ca.open,
-                ca.balance,
                 ca.last_note,
                 ca.created_at,
                 ca.updated_at,
