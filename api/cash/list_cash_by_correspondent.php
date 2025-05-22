@@ -39,23 +39,25 @@ try {
     $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
     $sql = "SELECT 
-                ca.id,
-                ca.correspondent_id,
-                ca.cashier_id,
-                ca.name, -- ✅ Se agregó el campo 'name'
-                ca.capacity,
-                ca.state,
-                ca.open,
-                ca.last_note,
-                ca.created_at,
-                ca.updated_at,
-                co.name AS correspondent_name,
-                u.fullname AS cashier_name
-            FROM cash ca
-            LEFT JOIN correspondents co ON ca.correspondent_id = co.id
-            LEFT JOIN users u ON ca.cashier_id = u.id
-            WHERE ca.correspondent_id = :correspondent_id
-            ORDER BY ca.id DESC";
+            ca.id,
+            ca.correspondent_id,
+            ca.cashier_id,
+            ca.name, -- ✅ Nombre de la caja
+            ca.capacity,
+            ca.state,
+            ca.open,
+            ca.last_note,
+            ca.initial_amount, -- ✅ Campo que faltaba
+            ca.created_at,
+            ca.updated_at,
+            co.name AS correspondent_name,
+            u.fullname AS cashier_name
+        FROM cash ca
+        LEFT JOIN correspondents co ON ca.correspondent_id = co.id
+        LEFT JOIN users u ON ca.cashier_id = u.id
+        WHERE ca.correspondent_id = :correspondent_id
+        ORDER BY ca.id DESC";
+
 
     $stmt = $conn->prepare($sql);
     $stmt->bindParam(":correspondent_id", $correspondentId, PDO::PARAM_INT);

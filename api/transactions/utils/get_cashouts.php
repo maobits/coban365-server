@@ -1,11 +1,11 @@
 <?php
 /**
  * Archivo: get_cash_withdrawals.php
- * Descripción: Retorna la lista de retiros activos (polarity = 0) de una caja específica junto con el total acumulado.
+ * Descripción: Retorna la lista de retiros activos (polarity = 0) de una caja específica junto con el total y utilidad acumuladas.
  * Proyecto: COBAN365
  * Desarrollador: Mauricio Chara
- * Versión: 1.1.0
- * Fecha de creación: 11-May-2025
+ * Versión: 1.2.0
+ * Fecha de actualización: 18-May-2025
  */
 
 header("Access-Control-Allow-Origin: *");
@@ -55,12 +55,18 @@ try {
     setlocale(LC_TIME, 'es_ES.UTF-8');
     foreach ($transactions as &$tx) {
         $datetime = new DateTime($tx["created_at"]);
-        $tx["formatted_date"] = $datetime->format("d") . " de " . strftime("%B", $datetime->getTimestamp()) . " de " . $datetime->format("Y") . " a las " . $datetime->format("h:i A");
+        $tx["formatted_date"] = $datetime->format("d") . " de " .
+            strftime("%B", $datetime->getTimestamp()) . " de " .
+            $datetime->format("Y") . " a las " .
+            $datetime->format("h:i A");
+        $tx["utility"] = isset($tx["utility"]) ? floatval($tx["utility"]) : 0;
     }
 
-    // Calcular total de retiros
+    // Calcular total de retiros y utilidad
     $sumSql = "
-        SELECT SUM(cost) AS total_withdrawal
+        SELECT 
+            SUM(cost) AS total_withdrawal,
+            SUM(utility) AS total_utility
         FROM transactions
         WHERE id_cash = :id_cash 
           AND polarity = 0 
@@ -70,11 +76,11 @@ try {
     $sumStmt->bindParam(":id_cash", $id_cash, PDO::PARAM_INT);
     $sumStmt->execute();
     $sumResult = $sumStmt->fetch(PDO::FETCH_ASSOC);
-    $total_withdrawal = $sumResult["total_withdrawal"] ?? 0;
 
     echo json_encode([
         "success" => true,
-        "total" => floatval($total_withdrawal),
+        "total" => floatval($sumResult["total_withdrawal"] ?? 0),
+        "utility" => floatval($sumResult["total_utility"] ?? 0),
         "data" => $transactions
     ]);
 } catch (PDOException $e) {
@@ -83,3 +89,4 @@ try {
         "message" => "Error al obtener los retiros: " . $e->getMessage()
     ]);
 }
+?>

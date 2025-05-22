@@ -1,11 +1,13 @@
 <?php
+date_default_timezone_set('America/Bogota'); // Hora local de Bogotá
+
 /**
  * Archivo: new_transaction.php
- * Descripción: Registra una nueva transacción con nombre de tipo de transacción y valor opcional third.
+ * Descripción: Registra una nueva transacción con utilidad, nombre de tipo y valor opcional client_reference.
  * Proyecto: COBAN365
  * Desarrollador: Mauricio Chara
- * Versión: 1.1.1
- * Fecha de actualización: 05-May-2025
+ * Versión: 1.2.0
+ * Fecha de actualización: 21-May-2025
  */
 
 header("Access-Control-Allow-Origin: *");
@@ -46,10 +48,12 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     $transaction_type_id = intval($data["transaction_type_id"]);
     $polarity = boolval($data["polarity"]);
     $cost = floatval($data["cost"]);
+    $utility = isset($data["utility"]) ? floatval($data["utility"]) : 0;
     $client_reference = isset($data["client_reference"]) ? $data["client_reference"] : null;
     $state = 1;
 
     try {
+        // Obtener el nombre del tipo de transacción
         $typeStmt = $pdo->prepare("SELECT name FROM transaction_types WHERE id = :id");
         $typeStmt->bindParam(":id", $transaction_type_id, PDO::PARAM_INT);
         $typeStmt->execute();
@@ -65,15 +69,16 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
         $note = $type["name"];
 
+        // Insertar transacción
         $stmt = $pdo->prepare("
             INSERT INTO transactions (
                 id_cashier, id_cash, id_correspondent,
                 transaction_type_id, polarity, cost,
-                state, note, client_reference
+                state, note, client_reference, utility
             ) VALUES (
                 :id_cashier, :id_cash, :id_correspondent,
                 :transaction_type_id, :polarity, :cost,
-                :state, :note, :client_reference
+                :state, :note, :client_reference, :utility
             )
         ");
 
@@ -86,6 +91,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         $stmt->bindParam(":state", $state, PDO::PARAM_INT);
         $stmt->bindParam(":note", $note, PDO::PARAM_STR);
         $stmt->bindParam(":client_reference", $client_reference, PDO::PARAM_STR);
+        $stmt->bindParam(":utility", $utility);
 
         if ($stmt->execute()) {
             echo json_encode([
@@ -110,4 +116,3 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         "message" => "Método no permitido."
     ]);
 }
-?>
