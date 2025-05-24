@@ -6,7 +6,7 @@ date_default_timezone_set('America/Bogota'); // Hora local de Bogotá
  * Descripción: Registra una nueva transacción con utilidad, nombre de tipo y valor opcional client_reference.
  * Proyecto: COBAN365
  * Desarrollador: Mauricio Chara
- * Versión: 1.2.0
+ * Versión: 1.3.0
  * Fecha de actualización: 21-May-2025
  */
 
@@ -53,8 +53,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     $state = 1;
 
     try {
-        // Obtener el nombre del tipo de transacción
-        $typeStmt = $pdo->prepare("SELECT name FROM transaction_types WHERE id = :id");
+        // Obtener el nombre y categoría del tipo de transacción
+        $typeStmt = $pdo->prepare("SELECT name, category FROM transaction_types WHERE id = :id");
         $typeStmt->bindParam(":id", $transaction_type_id, PDO::PARAM_INT);
         $typeStmt->execute();
         $type = $typeStmt->fetch(PDO::FETCH_ASSOC);
@@ -68,17 +68,18 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         }
 
         $note = $type["name"];
+        $neutral = (strtolower($type["category"]) === "otros") ? 1 : 0;
 
         // Insertar transacción
         $stmt = $pdo->prepare("
             INSERT INTO transactions (
                 id_cashier, id_cash, id_correspondent,
                 transaction_type_id, polarity, cost,
-                state, note, client_reference, utility
+                state, note, client_reference, utility, neutral
             ) VALUES (
                 :id_cashier, :id_cash, :id_correspondent,
                 :transaction_type_id, :polarity, :cost,
-                :state, :note, :client_reference, :utility
+                :state, :note, :client_reference, :utility, :neutral
             )
         ");
 
@@ -92,6 +93,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         $stmt->bindParam(":note", $note, PDO::PARAM_STR);
         $stmt->bindParam(":client_reference", $client_reference, PDO::PARAM_STR);
         $stmt->bindParam(":utility", $utility);
+        $stmt->bindParam(":neutral", $neutral, PDO::PARAM_BOOL);
 
         if ($stmt->execute()) {
             echo json_encode([
@@ -116,3 +118,4 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         "message" => "Método no permitido."
     ]);
 }
+?>

@@ -1,11 +1,11 @@
 <?php
 /**
  * Archivo: create_transaction_type.php
- * Descripción: Permite registrar un nuevo tipo de transacción en la base de datos, incluyendo la polaridad y client_reference.
+ * Descripción: Permite registrar un nuevo tipo de transacción en la base de datos, incluyendo la polaridad.
  * Proyecto: COBAN365
  * Desarrollador: Mauricio Chara
- * Versión: 1.2.0
- * Fecha de actualización: 27-Abr-2025
+ * Versión: 1.2.1
+ * Fecha de actualización: 27-May-2025
  */
 
 // Permitir solicitudes desde cualquier origen (CORS)
@@ -14,7 +14,7 @@ header("Access-Control-Allow-Methods: POST, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type, Authorization");
 header("Content-Type: application/json");
 
-// Maneja solicitudes OPTIONS (Preflight Request)
+// Manejar solicitudes OPTIONS (Preflight Request)
 if ($_SERVER["REQUEST_METHOD"] == "OPTIONS") {
     http_response_code(200);
     exit;
@@ -39,10 +39,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $category = trim($data["category"]);
     $name = trim($data["name"]);
     $polarity = boolval($data["polarity"]); // Asegura valor booleano
-    $client_reference = isset($data["client_reference"]) ? trim($data["client_reference"]) : null; // Campo opcional
 
     try {
-        // Verificar duplicado
+        // Verificar si ya existe
         $checkStmt = $pdo->prepare("SELECT id FROM transaction_types WHERE category = :category AND name = :name");
         $checkStmt->bindParam(":category", $category, PDO::PARAM_STR);
         $checkStmt->bindParam(":name", $name, PDO::PARAM_STR);
@@ -55,13 +54,12 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
         // Insertar nuevo tipo de transacción
         $stmt = $pdo->prepare("
-            INSERT INTO transaction_types (category, name, polarity, client_reference)
-            VALUES (:category, :name, :polarity, :client_reference)
+            INSERT INTO transaction_types (category, name, polarity)
+            VALUES (:category, :name, :polarity)
         ");
         $stmt->bindParam(":category", $category, PDO::PARAM_STR);
         $stmt->bindParam(":name", $name, PDO::PARAM_STR);
         $stmt->bindParam(":polarity", $polarity, PDO::PARAM_BOOL);
-        $stmt->bindParam(":client_reference", $client_reference, PDO::PARAM_STR);
 
         if ($stmt->execute()) {
             echo json_encode(["success" => true, "message" => "Tipo de transacción registrado exitosamente."]);

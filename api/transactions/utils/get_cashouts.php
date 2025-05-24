@@ -1,11 +1,11 @@
 <?php
 /**
  * Archivo: get_cash_withdrawals.php
- * Descripción: Retorna la lista de retiros activos (polarity = 0) de una caja específica junto con el total y utilidad acumuladas.
+ * Descripción: Retorna la lista de retiros activos (polarity = 0, neutral = 0) de una caja específica junto con el total y utilidad acumuladas.
  * Proyecto: COBAN365
  * Desarrollador: Mauricio Chara
- * Versión: 1.2.0
- * Fecha de actualización: 18-May-2025
+ * Versión: 1.2.1
+ * Fecha de actualización: 21-May-2025
  */
 
 header("Access-Control-Allow-Origin: *");
@@ -31,7 +31,7 @@ if (!isset($_GET["id_cash"])) {
 $id_cash = intval($_GET["id_cash"]);
 
 try {
-    // Obtener retiros individuales
+    // Obtener retiros individuales excluyendo transacciones neutrales
     $sql = "
         SELECT 
             t.*,
@@ -45,6 +45,7 @@ try {
         WHERE t.id_cash = :id_cash 
           AND t.polarity = 0 
           AND t.state = 1
+          AND t.neutral = 0
         ORDER BY t.created_at DESC
     ";
     $stmt = $pdo->prepare($sql);
@@ -62,7 +63,7 @@ try {
         $tx["utility"] = isset($tx["utility"]) ? floatval($tx["utility"]) : 0;
     }
 
-    // Calcular total de retiros y utilidad
+    // Calcular total de retiros y utilidad excluyendo transacciones neutrales
     $sumSql = "
         SELECT 
             SUM(cost) AS total_withdrawal,
@@ -71,6 +72,7 @@ try {
         WHERE id_cash = :id_cash 
           AND polarity = 0 
           AND state = 1
+          AND neutral = 0
     ";
     $sumStmt = $pdo->prepare($sumSql);
     $sumStmt->bindParam(":id_cash", $id_cash, PDO::PARAM_INT);
