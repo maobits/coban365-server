@@ -83,9 +83,10 @@ try {
     // Consulta de transaction_types
     $placeholders = implode(',', array_fill(0, count($allowedIds), '?'));
     $sql2 = "SELECT id, name, category, polarity, created_at, updated_at 
-             FROM transaction_types 
-             WHERE id IN ($placeholders) AND category = ?
-             ORDER BY name ASC";
+    FROM transaction_types 
+    WHERE id IN ($placeholders) AND LOWER(category) = LOWER(?)
+    ORDER BY name ASC";
+
 
     $stmt2 = $conn->prepare($sql2);
 
