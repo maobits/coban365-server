@@ -1,10 +1,10 @@
 <?php
 /**
  * Archivo: debt_correspondent_bank.php
- * Descripción: Calcula la deuda con el banco para un corresponsal, incluyendo detalle por caja.
+ * Descripción: Calcula la deuda con el banco para un corresponsal, incluyendo compensaciones y detalle por caja.
  * Proyecto: COBAN365
  * Desarrollador: Mauricio Chara
- * Fecha: 20-May-2025
+ * Fecha de actualización: 25-May-2025
  */
 
 header("Access-Control-Allow-Origin: *");
@@ -53,24 +53,36 @@ try {
     $stmt2->execute(["correspondent_id" => $correspondentId]);
     $withdrawals = floatval($stmt2->fetchColumn() ?: 0);
 
-    // 3. Detalle de cajas con initial_amount
+    // 3. Total compensaciones
     $stmt3 = $pdo->prepare("
+        SELECT SUM(cost) AS total_compensation
+        FROM transactions
+        WHERE transaction_type_id IN (
+            SELECT id FROM transaction_types WHERE category = 'Compensación'
+        )
+        AND id_correspondent = :correspondent_id
+    ");
+    $stmt3->execute(["correspondent_id" => $correspondentId]);
+    $compensations = floatval($stmt3->fetchColumn() ?: 0);
+
+    // 4. Detalle de cajas con initial_amount
+    $stmt4 = $pdo->prepare("
         SELECT id, name, initial_amount
         FROM cash
         WHERE correspondent_id = :correspondent_id
     ");
-    $stmt3->execute(["correspondent_id" => $correspondentId]);
-    $cajas = $stmt3->fetchAll(PDO::FETCH_ASSOC);
+    $stmt4->execute(["correspondent_id" => $correspondentId]);
+    $cashes = $stmt4->fetchAll(PDO::FETCH_ASSOC);
 
     $netCash = 0;
-    foreach ($cajas as &$caja) {
-        $amount = floatval($caja["initial_amount"] ?? 0);
-        $caja["initial_amount"] = $amount;
+    foreach ($cashes as &$cash) {
+        $amount = floatval($cash["initial_amount"] ?? 0);
+        $cash["initial_amount"] = $amount;
         $netCash += $amount;
     }
 
-    // 4. Cálculo final
-    $debt = ($income - $withdrawals) + $netCash;
+    // 5. Cálculo final actualizado
+    $debt = ($income - $withdrawals + $netCash) - $compensations;
 
     echo json_encode([
         "success" => true,
@@ -78,9 +90,10 @@ try {
         "data" => [
             "income" => $income,
             "withdrawals" => $withdrawals,
+            "compensations" => $compensations,
             "net_cash" => $netCash,
             "debt_to_bank" => $debt,
-            "cashes" => $cajas
+            "cashes" => $cashes
         ]
     ]);
 } catch (PDOException $e) {

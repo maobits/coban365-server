@@ -1,11 +1,12 @@
 <?php
 /**
  * Archivo: third_party_balance_sheet.php
- * Descripción: Calcula los saldos relacionados a terceros por corresponsal e ID de tercero.
+ * Descripción: Calcula el balance financiero de un tercero vinculado a un corresponsal
+ *              y valida si tiene cupo disponible para registrar préstamos.
  * Proyecto: COBAN365
  * Desarrollador: Mauricio Chara
- * Versión: 1.0.0
- * Fecha de creación: 24-May-2025
+ * Versión: 1.3.0
+ * Fecha de actualización: 25-May-2025
  */
 
 header("Access-Control-Allow-Origin: *");
@@ -13,13 +14,11 @@ header("Access-Control-Allow-Methods: GET, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type, Authorization");
 header("Content-Type: application/json");
 
-// Manejar preflight
 if ($_SERVER["REQUEST_METHOD"] === "OPTIONS") {
     http_response_code(200);
     exit();
 }
 
-// Validar parámetros obligatorios
 if (!isset($_GET["correspondent_id"]) || !isset($_GET["third_party_id"])) {
     echo json_encode([
         "success" => false,
@@ -37,20 +36,37 @@ try {
     $pdo = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8", $username, $password);
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-    // Consultar sumatoria por tipo de nota
+    // Obtener cupo del tercero
+    $creditQuery = "SELECT credit FROM others WHERE id = :thirdPartyId LIMIT 1";
+    $creditStmt = $pdo->prepare($creditQuery);
+    $creditStmt->bindParam(":thirdPartyId", $thirdPartyId, PDO::PARAM_INT);
+    $creditStmt->execute();
+    $creditData = $creditStmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$creditData) {
+        echo json_encode([
+            "success" => false,
+            "message" => "No se encontró el tercero con el ID especificado."
+        ]);
+        exit();
+    }
+
+    $creditLimit = floatval($creditData["credit"]);
+
+    // Consulta agrupada por nota (sin polarity)
     $query = "
         SELECT 
             third_party_note,
-            SUM(CASE WHEN polarity = 1 THEN cost ELSE -cost END) as total
+            SUM(cost) AS total
         FROM transactions
         WHERE id_correspondent = :correspondentId
           AND client_reference = :thirdPartyId
           AND state = 1
           AND third_party_note IN (
-              'debt-to-third-party',
-              'charge-a-third-party',
-              'third-party-loan',
-              'loan-received-from-a-third-party'
+              'debt_to_third_party',
+              'charge_to_third_party',
+              'loan_to_third_party',
+              'loan_from_third_party'
           )
         GROUP BY third_party_note
     ";
@@ -62,13 +78,41 @@ try {
 
     $results = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
 
+    // Obtener cada valor o 0
+    $debt = floatval($results["debt_to_third_party"] ?? 0);
+    $charge = floatval($results["charge_to_third_party"] ?? 0);
+    $loanTo = floatval($results["loan_to_third_party"] ?? 0);
+    $loanFrom = floatval($results["loan_from_third_party"] ?? 0);
+
+    // Cálculos contables
+    $debtToThirdParty = $loanFrom - $debt;
+    $chargeToThirdParty = $loanTo - $charge;
+
+    // Validar cupo disponible neto para préstamos
+    $cupoDisponible = $creditLimit - $chargeToThirdParty;
+    if ($cupoDisponible <= 0) {
+        echo json_encode([
+            "success" => false,
+            "message" => "El tercero no tiene cupo disponible para recibir un nuevo préstamo.",
+            "data" => [
+                "available_credit" => 0,
+                "credit_limit" => $creditLimit,
+                "charge_to_third_party" => $chargeToThirdParty
+            ]
+        ]);
+        exit();
+    }
+
     echo json_encode([
         "success" => true,
+        "message" => "Cálculo de balance exitoso.",
         "data" => [
-            "debt_to_third_party" => floatval($results["debt-to-third-party"] ?? 0),
-            "charge_to_third_party" => floatval($results["charge-a-third-party"] ?? 0),
-            "loan_to_third_party" => floatval($results["third-party-loan"] ?? 0),
-            "loan_from_third_party" => floatval($results["loan-received-from-a-third-party"] ?? 0)
+            "debt_to_third_party" => $debtToThirdParty,
+            "charge_to_third_party" => $chargeToThirdParty,
+            "loan_to_third_party" => $loanTo,
+            "loan_from_third_party" => $loanFrom,
+            "available_credit" => $cupoDisponible,
+            "credit_limit" => $creditLimit
         ]
     ]);
 } catch (PDOException $e) {
