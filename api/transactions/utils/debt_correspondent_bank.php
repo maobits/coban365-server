@@ -37,6 +37,7 @@ try {
             SELECT id FROM transaction_types WHERE category = 'Ingresos'
         )
         AND id_correspondent = :correspondent_id
+        AND state = 1
     ");
     $stmt1->execute(["correspondent_id" => $correspondentId]);
     $income = floatval($stmt1->fetchColumn() ?: 0);
@@ -49,6 +50,7 @@ try {
             SELECT id FROM transaction_types WHERE category = 'Retiros'
         )
         AND id_correspondent = :correspondent_id
+        AND state = 1
     ");
     $stmt2->execute(["correspondent_id" => $correspondentId]);
     $withdrawals = floatval($stmt2->fetchColumn() ?: 0);
@@ -61,6 +63,7 @@ try {
             SELECT id FROM transaction_types WHERE category = 'Compensación'
         )
         AND id_correspondent = :correspondent_id
+        AND state = 1
     ");
     $stmt3->execute(["correspondent_id" => $correspondentId]);
     $compensations = floatval($stmt3->fetchColumn() ?: 0);

@@ -33,15 +33,23 @@ $id_cash = intval($_GET["id_cash"]);
 $page = isset($_GET["page"]) ? max(1, intval($_GET["page"])) : 1;
 $perPage = isset($_GET["per_page"]) ? max(1, intval($_GET["per_page"])) : 20;
 $offset = ($page - 1) * $perPage;
+$category = isset($_GET["category"]) ? trim($_GET["category"]) : null;
 
 try {
     // Total combinando transacciones salientes y transferencias entrantes
     $countSql = "
-        SELECT COUNT(*) FROM transactions 
-        WHERE state = 1 AND (id_cash = :id_cash OR box_reference = :id_cash)
+        SELECT COUNT(*) FROM transactions t
+        LEFT JOIN transaction_types tt ON t.transaction_type_id = tt.id
+        WHERE t.state = 1 AND (t.id_cash = :id_cash OR t.box_reference = :id_cash)
     ";
+    if ($category) {
+        $countSql .= " AND tt.category = :category";
+    }
     $countStmt = $pdo->prepare($countSql);
     $countStmt->bindParam(":id_cash", $id_cash, PDO::PARAM_INT);
+    if ($category) {
+        $countStmt->bindParam(":category", $category, PDO::PARAM_STR);
+    }
     $countStmt->execute();
     $total = $countStmt->fetchColumn();
     $totalPages = ceil($total / $perPage);
@@ -63,18 +71,22 @@ try {
         LEFT JOIN cash ca2 ON t.box_reference = ca2.id
         LEFT JOIN others o ON t.client_reference = o.id
         WHERE t.state = 1 AND (t.id_cash = :id_cash OR t.box_reference = :id_cash)
-        ORDER BY t.created_at DESC
-        LIMIT :limit OFFSET :offset
     ";
+    if ($category) {
+        $sql .= " AND tt.category = :category";
+    }
+    $sql .= " ORDER BY t.created_at DESC LIMIT :limit OFFSET :offset";
 
     $stmt = $pdo->prepare($sql);
     $stmt->bindParam(":id_cash", $id_cash, PDO::PARAM_INT);
+    if ($category) {
+        $stmt->bindParam(":category", $category, PDO::PARAM_STR);
+    }
     $stmt->bindParam(":limit", $perPage, PDO::PARAM_INT);
     $stmt->bindParam(":offset", $offset, PDO::PARAM_INT);
     $stmt->execute();
     $transactions = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // Formatear fechas
     // Formatear fechas y ajustar nota según rol de la caja en la transferencia
     setlocale(LC_TIME, 'es_ES.UTF-8');
     foreach ($transactions as &$tx) {
@@ -107,9 +119,6 @@ try {
         $datetime = new DateTime($tx["created_at"]);
         $tx["formatted_date"] = $datetime->format("d") . " de " . strftime("%B", $datetime->getTimestamp()) . " de " . $datetime->format("Y") . " a las " . $datetime->format("h:i A");
     }
-
-
-
 
     echo json_encode([
         "success" => true,
