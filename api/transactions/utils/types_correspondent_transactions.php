@@ -38,7 +38,7 @@ $movementMap = [
     "others" => "Otros",
     "third_parties" => "Terceros",
     "compensation" => "Compensación",
-    "transfer" => "Transferencia",
+    "transfer" => "Transferir",
 ];
 
 $category = $movementMap[$movementType] ?? null;

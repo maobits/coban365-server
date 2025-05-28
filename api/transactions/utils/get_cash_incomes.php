@@ -4,8 +4,8 @@
  * Descripción: Retorna la lista de ingresos activos (polarity = 1) de una caja específica junto con el total acumulado y la utilidad.
  * Proyecto: COBAN365
  * Desarrollador: Mauricio Chara
- * Versión: 1.2.0
- * Fecha de actualización: 18-May-2025
+ * Versión: 1.3.0
+ * Fecha de actualización: 27-May-2025
  */
 
 header("Access-Control-Allow-Origin: *");
@@ -31,7 +31,7 @@ if (!isset($_GET["id_cash"])) {
 $id_cash = intval($_GET["id_cash"]);
 
 try {
-    // Obtener ingresos individuales
+    // Obtener ingresos individuales, incluyendo transferencias aceptadas con impacto (neutral = 0) hacia esta caja
     $sql = "
         SELECT 
             t.*,
@@ -42,9 +42,11 @@ try {
         LEFT JOIN transaction_types tt ON t.transaction_type_id = tt.id
         LEFT JOIN correspondents c ON t.id_correspondent = c.id
         LEFT JOIN users u ON t.id_cashier = u.id
-        WHERE t.id_cash = :id_cash 
-          AND t.polarity = 1 
-          AND t.state = 1
+        WHERE t.state = 1 AND (
+            (t.polarity = 1 AND t.id_cash = :id_cash AND t.is_transfer = 0)
+            OR
+            (t.is_transfer = 1 AND t.neutral = 0 AND t.transfer_status = 1 AND t.box_reference = :id_cash)
+        )
         ORDER BY t.created_at DESC
     ";
     $stmt = $pdo->prepare($sql);
@@ -68,9 +70,11 @@ try {
             SUM(cost) AS total_income,
             SUM(utility) AS total_utility
         FROM transactions
-        WHERE id_cash = :id_cash 
-          AND polarity = 1 
-          AND state = 1
+        WHERE state = 1 AND (
+            (polarity = 1 AND id_cash = :id_cash AND is_transfer = 0)
+            OR
+            (is_transfer = 1 AND neutral = 0 AND transfer_status = 1 AND box_reference = :id_cash)
+        )
     ";
     $sumStmt = $pdo->prepare($sumSql);
     $sumStmt->bindParam(":id_cash", $id_cash, PDO::PARAM_INT);

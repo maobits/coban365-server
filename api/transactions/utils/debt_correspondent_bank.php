@@ -84,6 +84,8 @@ try {
     // 5. Cálculo final actualizado
     $debt = ($income - $withdrawals + $netCash) - $compensations;
 
+
+
     echo json_encode([
         "success" => true,
         "correspondent_id" => $correspondentId,
