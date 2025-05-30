@@ -117,7 +117,7 @@ try {
         }
 
         $datetime = new DateTime($tx["created_at"]);
-        $tx["formatted_date"] = $datetime->format("d") . " de " . strftime("%B", $datetime->getTimestamp()) . " de " . $datetime->format("Y") . " a las " . $datetime->format("h:i A");
+        $tx["formatted_date"] = $datetime->format("d-m-Y h:i a");
     }
 
     echo json_encode([
