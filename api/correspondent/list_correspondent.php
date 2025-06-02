@@ -19,15 +19,16 @@ try {
     $conn = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8", $username, $password);
     $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-    // Consulta SQL incluyendo también el campo `state` y `credit_limit`
+    // Consulta SQL actualizada incluyendo el campo `premium`
     $sql = "SELECT 
                 c.id, 
                 c.code, 
                 c.name, 
                 c.location, 
                 c.transactions,
-                c.state, -- ⬅️ Campo existente
-                c.credit_limit, -- ✅ Campo nuevo agregado
+                c.state, 
+                c.credit_limit, 
+                c.premium, -- ✅ Campo agregado
                 c.created_at, 
                 c.updated_at,
                 t.id AS type_id, 

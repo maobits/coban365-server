@@ -4,6 +4,7 @@ header("Access-Control-Allow-Origin: *"); // Puedes cambiar * por un dominio esp
 header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type, Authorization");
 
+// Manejar preflight
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
     exit();
@@ -14,7 +15,7 @@ require_once '../db.php';
 header('Content-Type: application/json');
 
 try {
-    // Conectar a la base de datos
+    // Conectar a la base de datos con codificación UTF-8
     $conn = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8", $username, $password);
     $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
@@ -30,7 +31,7 @@ try {
         exit();
     }
 
-    // Consulta SQL para obtener solo los corresponsales del operador dado
+    // Consulta SQL con el nuevo campo 'premium'
     $sql = "SELECT 
                 c.id, 
                 c.code, 
@@ -38,7 +39,8 @@ try {
                 c.location, 
                 c.transactions,
                 c.state,
-                c.credit_limit, -- ✅ Campo nuevo agregado
+                c.credit_limit,
+                c.premium, -- ✅ Campo premium incluido
                 c.created_at, 
                 c.updated_at,
                 t.id AS type_id, 

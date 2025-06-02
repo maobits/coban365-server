@@ -4,15 +4,15 @@
  * Descripción: Devuelve el corresponsal asociado a una caja específica.
  * Proyecto: COBAN365
  * Desarrollador: Mauricio Chara
- * Versión: 1.0.0
- * Fecha de creación: 18-May-2025
+ * Versión: 1.0.1
+ * Fecha de actualización: 03-Jun-2025
  */
 
 // Habilitar CORS
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type, Authorization");
-header("Content-Type: application/json");
+header("Content-Type: application/json; charset=utf-8");
 
 // Manejar preflight request
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
@@ -39,7 +39,7 @@ try {
     $conn = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8", $username, $password);
     $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-    // Consulta para obtener el corresponsal desde la caja
+    // Consulta con campo premium incluido
     $sql = "SELECT 
                 c.id, 
                 c.code, 
@@ -50,6 +50,7 @@ try {
                 c.created_at, 
                 c.updated_at,
                 c.credit_limit,
+                c.premium, -- ✅ Campo agregado
                 t.id AS type_id, 
                 t.name AS type_name, 
                 t.description AS type_description, 
