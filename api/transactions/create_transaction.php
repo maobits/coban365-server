@@ -24,6 +24,9 @@ require_once "../../libs/src/PHPMailer.php";
 require_once "../../libs/src/SMTP.php";
 require_once "../../libs/src/Exception.php";
 
+// Establecer zona horaria Colombia (Bogotá)
+date_default_timezone_set("America/Bogota");
+
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 
