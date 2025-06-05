@@ -1,15 +1,4 @@
 <?php
-/**
- * Archivo: box_report.php
- * Descripción: Devuelve el total agrupado por tipo de transacción para las cajas de un corresponsal,
- *              incluyendo ingresos, egresos, saldo por tipo y nombre de la caja.
- *              Si se pasa un id_cash, devuelve solo esa caja del corresponsal.
- * Proyecto: COBAN365
- * Desarrollador: Mauricio Chara
- * Versión: 1.0.1
- * Fecha de actualización: 06-Jun-2025
- */
-
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: POST, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type, Authorization");
@@ -38,13 +27,13 @@ try {
     $pdo = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8", $username, $password);
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-    // Obtener nombre del corresponsal
+    // Nombre del corresponsal
     $nameStmt = $pdo->prepare("SELECT name FROM correspondents WHERE id = :id");
     $nameStmt->execute([":id" => $correspondentId]);
     $correspondent = $nameStmt->fetch(PDO::FETCH_ASSOC);
     $correspondentName = $correspondent ? $correspondent["name"] : "Corresponsal desconocido";
 
-    // Construcción dinámica del filtro
+    // Filtros
     $params = [":id_correspondent" => $correspondentId];
     $conditions = ["t.id_correspondent = :id_correspondent"];
 
@@ -61,6 +50,7 @@ try {
 
     $whereClause = implode(" AND ", $conditions);
 
+    // Consultar transacciones agrupadas
     $stmt = $pdo->prepare("
         SELECT 
             t.transaction_type_id,
@@ -74,29 +64,42 @@ try {
         GROUP BY t.transaction_type_id, tt.name, tt.category, tt.polarity
         ORDER BY tt.category, tt.name
     ");
-
     $stmt->execute($params);
     $rawResults = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+    // Consultar monto inicial total de todas las cajas del corresponsal
+    $initStmt = $pdo->prepare("SELECT SUM(initial_amount) AS total_initial FROM cash WHERE correspondent_id = :correspondent_id");
+    $initStmt->execute([":correspondent_id" => $correspondentId]);
+    $initResult = $initStmt->fetch(PDO::FETCH_ASSOC);
+    $initialAmountTotal = $initResult ? floatval($initResult["total_initial"]) : 0;
+
     $grouped = [];
-    $ingresos = 0;
+    $ingresos = $initialAmountTotal;
     $egresos = 0;
 
     foreach ($rawResults as $row) {
         $typeId = $row['transaction_type_id'];
         $amount = floatval($row['total']);
+        $category = $row["category"];
+        $polarity = $row["polarity"];
 
         if (!isset($grouped[$typeId])) {
             $grouped[$typeId] = [
                 "transaction_type_id" => $typeId,
                 "transaction_type_name" => $row["transaction_type_name"],
-                "category" => $row["category"],
+                "category" => $category,
                 "ingresos" => 0,
                 "egresos" => 0,
             ];
         }
 
-        if ($row["polarity"] == 1) {
+        if (strtolower($category) === "otros") {
+            $grouped[$typeId]["ingresos"] = 0;
+            $grouped[$typeId]["egresos"] = 0;
+            continue;
+        }
+
+        if ($polarity == 1) {
             $grouped[$typeId]["ingresos"] += $amount;
             $ingresos += $amount;
         } else {
@@ -105,15 +108,28 @@ try {
         }
     }
 
+    // Agregar monto inicial como transacción simulada
+    $grouped = array_values($grouped); // convertir a lista para respuesta
+    array_unshift($grouped, [
+        "transaction_type_id" => 0,
+        "transaction_type_name" => "Monto inicial",
+        "category" => "Inicial",
+        "ingresos" => $initialAmountTotal,
+        "egresos" => 0,
+        "saldo_por_tipo" => $initialAmountTotal
+    ]);
+
     foreach ($grouped as &$g) {
-        $g["saldo_por_tipo"] = round($g["ingresos"] - $g["egresos"], 2);
+        if (!isset($g["saldo_por_tipo"])) {
+            $g["saldo_por_tipo"] = round($g["ingresos"] - $g["egresos"], 2);
+        }
     }
 
     echo json_encode([
         "success" => true,
         "data" => [
             "correspondent_name" => $correspondentName,
-            "resumen" => array_values($grouped),
+            "resumen" => $grouped,
             "totales" => [
                 "ingresos" => round($ingresos, 2),
                 "egresos" => round($egresos, 2),

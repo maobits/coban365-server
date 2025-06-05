@@ -4,8 +4,8 @@
  * Descripción: Devuelve el total agrupado por tipo de transacción, por caja o por todas las cajas de un corresponsal.
  * Proyecto: COBAN365
  * Desarrollador: Mauricio Chara
- * Versión: 1.0.1
- * Fecha: 06-Jun-2025
+ * Versión: 1.0.3
+ * Fecha: 07-Jun-2025
  */
 
 header("Access-Control-Allow-Origin: *");
@@ -36,18 +36,15 @@ try {
     $pdo = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8", $username, $password);
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-    // Obtener nombre del corresponsal
     $nameStmt = $pdo->prepare("SELECT name FROM correspondents WHERE id = :id");
     $nameStmt->execute([":id" => $correspondentId]);
     $correspondent = $nameStmt->fetch(PDO::FETCH_ASSOC);
     $correspondentName = $correspondent ? $correspondent["name"] : "Corresponsal desconocido";
 
-    // Determinar las cajas a consultar
     if ($cashId) {
-        $boxes = [["id" => $cashId, "name" => "Caja seleccionada"]]; // Puedes consultar el nombre si lo deseas
+        $boxes = [["id" => $cashId, "name" => "Caja seleccionada"]];
     } else {
-        $boxQuery = "SELECT id, name FROM cash WHERE correspondent_id = :id_correspondent";
-        $boxStmt = $pdo->prepare($boxQuery);
+        $boxStmt = $pdo->prepare("SELECT id, name FROM cash WHERE correspondent_id = :id_correspondent");
         $boxStmt->execute([":id_correspondent" => $correspondentId]);
         $boxes = $boxStmt->fetchAll(PDO::FETCH_ASSOC);
     }
@@ -66,8 +63,8 @@ try {
             $params[":end_date"] = $endDate . " 23:59:59";
         }
 
-        $stmt = $pdo->prepare("
-            SELECT 
+        // Obtener movimientos detallados por tipo
+        $stmt = $pdo->prepare("SELECT 
                 t.transaction_type_id,
                 tt.name AS transaction_type_name,
                 tt.category,
@@ -78,10 +75,62 @@ try {
             WHERE t.id_cash = :box_id
             $dateCondition
             GROUP BY t.transaction_type_id, tt.name, tt.category, tt.polarity
-            ORDER BY tt.category, tt.name
-        ");
+            ORDER BY tt.category, tt.name");
         $stmt->execute($params);
         $rawResults = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // Obtener monto inicial
+        $initStmt = $pdo->prepare("SELECT initial_amount FROM cash WHERE id = :id_cash LIMIT 1");
+        $initStmt->execute([':id_cash' => $box['id']]);
+        $initAmountRow = $initStmt->fetch(PDO::FETCH_ASSOC);
+        $initialAmount = $initAmountRow ? floatval($initAmountRow['initial_amount']) : 0;
+
+        // Obtener transferencias recibidas con fecha
+        $transferInStmt = $pdo->prepare("SELECT cost, created_at FROM transactions 
+            WHERE box_reference = :box_id AND is_transfer = 1 AND transfer_status = 1 $dateCondition");
+        $transferInStmt->execute($params);
+        $transferIns = $transferInStmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // Obtener transferencias realizadas con fecha
+        $transferOutStmt = $pdo->prepare("SELECT cost, created_at FROM transactions 
+            WHERE id_cash = :box_id AND is_transfer = 1 AND transfer_status = 1 $dateCondition");
+        $transferOutStmt->execute($params);
+        $transferOuts = $transferOutStmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // Preparar transacciones simuladas
+        $simulated = [];
+
+        // Monto inicial como primer entrada
+        $simulated[] = [
+            "created_at" => "0000-00-00 00:00:00",
+            "transaction_type_name" => "Monto inicial",
+            "category" => "Inicial",
+            "ingresos" => $initialAmount,
+            "egresos" => 0,
+            "saldo_por_tipo" => $initialAmount
+        ];
+
+        foreach ($transferIns as $t) {
+            $simulated[] = [
+                "created_at" => $t['created_at'],
+                "transaction_type_name" => "Transferencia recibida",
+                "category" => "Transferencia",
+                "ingresos" => floatval($t['cost']),
+                "egresos" => 0,
+                "saldo_por_tipo" => floatval($t['cost'])
+            ];
+        }
+
+        foreach ($transferOuts as $t) {
+            $simulated[] = [
+                "created_at" => $t['created_at'],
+                "transaction_type_name" => "Transferencia realizada",
+                "category" => "Transferencia",
+                "ingresos" => 0,
+                "egresos" => floatval($t['cost']),
+                "saldo_por_tipo" => -floatval($t['cost'])
+            ];
+        }
 
         $grouped = [];
         $ingresos = 0;
@@ -90,18 +139,26 @@ try {
         foreach ($rawResults as $row) {
             $typeId = $row['transaction_type_id'];
             $amount = floatval($row['total']);
+            $category = $row["category"];
+            $polarity = $row["polarity"];
 
             if (!isset($grouped[$typeId])) {
                 $grouped[$typeId] = [
                     "transaction_type_id" => $typeId,
                     "transaction_type_name" => $row["transaction_type_name"],
-                    "category" => $row["category"],
+                    "category" => $category,
                     "ingresos" => 0,
                     "egresos" => 0,
                 ];
             }
 
-            if ($row["polarity"] == 1) {
+            if (strtolower($category) === "otros") {
+                $grouped[$typeId]["ingresos"] = 0;
+                $grouped[$typeId]["egresos"] = 0;
+                continue;
+            }
+
+            if ($polarity == 1) {
                 $grouped[$typeId]["ingresos"] += $amount;
                 $ingresos += $amount;
             } else {
@@ -110,14 +167,30 @@ try {
             }
         }
 
-        foreach ($grouped as &$g) {
-            $g["saldo_por_tipo"] = round($g["ingresos"] - $g["egresos"], 2);
+        foreach ($grouped as $g) {
+            $simulated[] = [
+                "created_at" => "9999-12-31 23:59:59",
+                "transaction_type_name" => $g["transaction_type_name"],
+                "category" => $g["category"],
+                "ingresos" => $g["ingresos"],
+                "egresos" => $g["egresos"],
+                "saldo_por_tipo" => round($g["ingresos"] - $g["egresos"], 2)
+            ];
+        }
+
+        usort($simulated, function ($a, $b) {
+            return strtotime($a['created_at']) - strtotime($b['created_at']);
+        });
+
+        foreach ($simulated as $s) {
+            $ingresos += $s['ingresos'];
+            $egresos += $s['egresos'];
         }
 
         $reportes[] = [
             "cash_id" => $box["id"],
             "cash_name" => $box["name"],
-            "resumen" => array_values($grouped),
+            "resumen" => $simulated,
             "totales" => [
                 "ingresos" => round($ingresos, 2),
                 "egresos" => round($egresos, 2),
