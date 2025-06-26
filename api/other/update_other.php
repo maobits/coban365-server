@@ -4,8 +4,8 @@
  * Descripción: Permite actualizar los datos de un tercero (other).
  * Proyecto: COBAN365
  * Desarrollador: Mauricio Chara
- * Versión: 1.1.0
- * Fecha de actualización: 16-May-2025
+ * Versión: 1.2.0
+ * Fecha de actualización: 20-Jun-2025
  */
 
 // Habilitar CORS
@@ -34,7 +34,7 @@ $data = json_decode(file_get_contents("php://input"), true);
 
 // Validar campos obligatorios
 if (
-    !isset($data["id"], $data["correspondent_id"], $data["name"], $data["credit"], $data["state"])
+    !isset($data["id"], $data["correspondent_id"], $data["name"], $data["credit"], $data["balance"], $data["state"])
 ) {
     echo json_encode(["success" => false, "message" => "Faltan datos obligatorios."]);
     exit();
@@ -44,6 +44,7 @@ $id = intval($data["id"]);
 $correspondent_id = intval($data["correspondent_id"]);
 $name = trim($data["name"]);
 $credit = floatval($data["credit"]);
+$balance = floatval($data["balance"]);
 $state = intval($data["state"]);
 
 // Nuevos campos opcionales
@@ -61,6 +62,7 @@ try {
                 correspondent_id = :correspondent_id,
                 name = :name,
                 credit = :credit,
+                balance = :balance,
                 state = :state,
                 id_type = :id_type,
                 id_number = :id_number,
@@ -76,6 +78,7 @@ try {
         ":correspondent_id" => $correspondent_id,
         ":name" => $name,
         ":credit" => $credit,
+        ":balance" => $balance,
         ":state" => $state,
         ":id_type" => $id_type,
         ":id_number" => $id_number,

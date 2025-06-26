@@ -4,8 +4,8 @@
  * Descripción: Permite registrar un nuevo tercero en la base de datos y notifica al administrador del corresponsal.
  * Proyecto: COBAN365
  * Desarrollador: Mauricio Chara
- * Versión: 1.2.0
- * Fecha de actualización: 01-Jun-2025
+ * Versión: 1.2.1
+ * Fecha de actualización: 20-Jun-2025
  */
 
 header("Access-Control-Allow-Origin: *");
@@ -57,6 +57,7 @@ function notifyAdmin($adminEmail, $correspondentName, $other)
                     <tr><th>Teléfono</th><td>{$other['phone']}</td></tr>
                     <tr><th>Dirección</th><td>{$other['address']}</td></tr>
                     <tr><th>Crédito</th><td>$ {$other['credit']}</td></tr>
+                    <tr><th>Balance</th><td>$ {$other['balance']}</td></tr>
                     <tr><th>Estado</th><td>" . ($other['state'] ? "Activo" : "Inactivo") . "</td></tr>
                 </table>
                 <p style='color: #888; font-size: 12px;'>COBAN365 - Sistema de gestión de corresponsales</p>
@@ -73,7 +74,7 @@ function notifyAdmin($adminEmail, $correspondentName, $other)
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
     $data = json_decode(file_get_contents("php://input"), true);
 
-    if (!isset($data["correspondent_id"], $data["name"], $data["credit"], $data["id_type"], $data["id_number"])) {
+    if (!isset($data["correspondent_id"], $data["name"], $data["credit"], $data["balance"], $data["id_type"], $data["id_number"])) {
         echo json_encode(["success" => false, "message" => "Faltan campos obligatorios."]);
         exit;
     }
@@ -81,6 +82,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     $correspondent_id = intval($data["correspondent_id"]);
     $name = trim($data["name"]);
     $credit = floatval($data["credit"]);
+    $balance = floatval($data["balance"]);
     $state = isset($data["state"]) ? intval($data["state"]) : 1;
     $id_type = trim($data["id_type"]);
     $id_number = trim($data["id_number"]);
@@ -91,9 +93,9 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     try {
         $stmt = $pdo->prepare("
             INSERT INTO others (
-                correspondent_id, name, id_type, id_number, email, phone, address, credit, state
+                correspondent_id, name, id_type, id_number, email, phone, address, credit, balance, state
             ) VALUES (
-                :correspondent_id, :name, :id_type, :id_number, :email, :phone, :address, :credit, :state
+                :correspondent_id, :name, :id_type, :id_number, :email, :phone, :address, :credit, :balance, :state
             )
         ");
 
@@ -105,10 +107,10 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         $stmt->bindParam(":phone", $phone, PDO::PARAM_STR);
         $stmt->bindParam(":address", $address, PDO::PARAM_STR);
         $stmt->bindParam(":credit", $credit);
+        $stmt->bindParam(":balance", $balance);
         $stmt->bindParam(":state", $state, PDO::PARAM_INT);
 
         if ($stmt->execute()) {
-            // Obtener email del operador del corresponsal
             $adminQuery = $pdo->prepare("
                 SELECT u.email, c.name AS correspondent_name
                 FROM correspondents c
@@ -127,6 +129,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                     "phone" => $phone ?? "No proporcionado",
                     "address" => $address ?? "No proporcionado",
                     "credit" => number_format($credit, 2),
+                    "balance" => number_format($balance, 2),
                     "state" => $state
                 ]);
             }

@@ -5,8 +5,8 @@
  *              y valida si tiene cupo disponible para registrar préstamos.
  * Proyecto: COBAN365
  * Desarrollador: Mauricio Chara
- * Versión: 1.3.0
- * Fecha de actualización: 25-May-2025
+ * Versión: 1.3.1
+ * Fecha de actualización: 21-Jun-2025
  */
 
 header("Access-Control-Allow-Origin: *");
@@ -36,8 +36,8 @@ try {
     $pdo = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8", $username, $password);
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-    // Obtener cupo del tercero
-    $creditQuery = "SELECT credit FROM others WHERE id = :thirdPartyId LIMIT 1";
+    // Obtener cupo y balance del tercero
+    $creditQuery = "SELECT credit, balance FROM others WHERE id = :thirdPartyId LIMIT 1";
     $creditStmt = $pdo->prepare($creditQuery);
     $creditStmt->bindParam(":thirdPartyId", $thirdPartyId, PDO::PARAM_INT);
     $creditStmt->execute();
@@ -52,6 +52,7 @@ try {
     }
 
     $creditLimit = floatval($creditData["credit"]);
+    $initialBalance = floatval($creditData["balance"]);
 
     // Consulta agrupada por nota (sin polarity)
     $query = "
@@ -90,6 +91,11 @@ try {
 
     // Validar cupo disponible neto para préstamos
     $cupoDisponible = $creditLimit - $chargeToThirdParty;
+
+    // Saldo neto = saldo inicial + cobros - deudas
+    $netBalance = $initialBalance + ($chargeToThirdParty - $debtToThirdParty);
+
+    // Si no tiene cupo, avisar igualmente
     if ($cupoDisponible <= 0) {
         echo json_encode([
             "success" => false,
@@ -97,7 +103,12 @@ try {
             "data" => [
                 "available_credit" => 0,
                 "credit_limit" => $creditLimit,
-                "charge_to_third_party" => $chargeToThirdParty
+                "charge_to_third_party" => $chargeToThirdParty,
+                "debt_to_third_party" => $debtToThirdParty,
+                "loan_to_third_party" => $loanTo,
+                "loan_from_third_party" => $loanFrom,
+                "balance" => $initialBalance,
+                "net_balance" => $netBalance
             ]
         ]);
         exit();
@@ -112,7 +123,9 @@ try {
             "loan_to_third_party" => $loanTo,
             "loan_from_third_party" => $loanFrom,
             "available_credit" => $cupoDisponible,
-            "credit_limit" => $creditLimit
+            "credit_limit" => $creditLimit,
+            "balance" => $initialBalance,
+            "net_balance" => $netBalance
         ]
     ]);
 } catch (PDOException $e) {
@@ -121,4 +134,3 @@ try {
         "message" => "Error en la base de datos: " . $e->getMessage()
     ]);
 }
-?>

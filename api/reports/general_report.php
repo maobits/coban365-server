@@ -33,7 +33,7 @@ try {
     $correspondent = $nameStmt->fetch(PDO::FETCH_ASSOC);
     $correspondentName = $correspondent ? $correspondent["name"] : "Corresponsal desconocido";
 
-    // Filtros
+    // Filtros base
     $params = [":id_correspondent" => $correspondentId];
     $conditions = ["t.id_correspondent = :id_correspondent"];
 
@@ -108,8 +108,52 @@ try {
         }
     }
 
+    // 🔁 Duplicar transferencias como ingreso simulado (basado en is_transfer = 1)
+    $transferIncome = 0;
+    if (!$cashId) {
+        $transferStmt = $pdo->prepare("
+            SELECT 
+                tt.name AS transaction_type_name,
+                tt.category,
+                SUM(t.cost) AS total
+            FROM transactions t
+            INNER JOIN transaction_types tt ON t.transaction_type_id = tt.id
+            WHERE 
+                t.id_correspondent = :id_correspondent
+                AND t.is_transfer = 1
+                AND t.transfer_status = 1
+                " . ($startDate && $endDate ? " AND t.created_at BETWEEN :start_date AND :end_date" : "") . "
+            GROUP BY tt.name, tt.category
+        ");
+
+        $paramsTransfer = [":id_correspondent" => $correspondentId];
+        if ($startDate && $endDate) {
+            $paramsTransfer[":start_date"] = $params[":start_date"];
+            $paramsTransfer[":end_date"] = $params[":end_date"];
+        }
+
+        $transferStmt->execute($paramsTransfer);
+        $transferRows = $transferStmt->fetchAll(PDO::FETCH_ASSOC);
+
+        foreach ($transferRows as $transfer) {
+            $amount = floatval($transfer["total"]);
+            $transferIncome += $amount;
+
+            $grouped[] = [
+                "transaction_type_id" => -100, // ID ficticio
+                "transaction_type_name" => "Transferencias recibidas (otra caja)",
+                "category" => $transfer["category"],
+                "ingresos" => $amount,
+                "egresos" => 0,
+                "saldo_por_tipo" => $amount,
+            ];
+        }
+
+        $ingresos += $transferIncome;
+    }
+
     // Agregar monto inicial como transacción simulada
-    $grouped = array_values($grouped); // convertir a lista para respuesta
+    $grouped = array_values($grouped);
     array_unshift($grouped, [
         "transaction_type_id" => 0,
         "transaction_type_name" => "Monto inicial",

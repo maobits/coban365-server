@@ -1,10 +1,10 @@
 <?php
 /**
  * Archivo: debt_correspondent_bank.php
- * Descripción: Calcula la deuda con el banco para un corresponsal, incluyendo compensaciones, terceros (con balance invertido) y detalle por caja.
+ * Descripción: Calcula la deuda con el banco para un corresponsal, incluyendo compensaciones y detalle por caja.
  * Proyecto: COBAN365
  * Desarrollador: Mauricio Chara
- * Fecha de actualización: 26-Jun-2025
+ * Fecha de actualización: 25-May-2025
  */
 
 header("Access-Control-Allow-Origin: *");
@@ -77,27 +77,17 @@ try {
     $stmt4->execute(["correspondent_id" => $correspondentId]);
     $cashes = $stmt4->fetchAll(PDO::FETCH_ASSOC);
 
-    $sumInitialAmounts = 0;
+    $netCash = 0;
     foreach ($cashes as &$cash) {
         $amount = floatval($cash["initial_amount"] ?? 0);
         $cash["initial_amount"] = $amount;
-        $sumInitialAmounts += $amount;
+        $netCash += $amount;
     }
 
-    // 5. Suma del balance de terceros (invirtiendo el signo)
-    $stmt5 = $pdo->prepare("
-        SELECT SUM(balance * -1) AS inverted_balance
-        FROM others
-        WHERE correspondent_id = :correspondent_id
-    ");
-    $stmt5->execute(["correspondent_id" => $correspondentId]);
-    $thirdPartyBalance = floatval($stmt5->fetchColumn() ?: 0);
-
-    // 6. Sumar balance invertido al total de caja
-    $netCash = $sumInitialAmounts + $thirdPartyBalance;
-
-    // 7. Cálculo final de deuda
+    // 5. Cálculo final actualizado
     $debt = ($income - $withdrawals + $netCash) - $compensations;
+
+
 
     echo json_encode([
         "success" => true,
@@ -106,8 +96,6 @@ try {
             "income" => $income,
             "withdrawals" => $withdrawals,
             "compensations" => $compensations,
-            "initial_cash_total" => $sumInitialAmounts,
-            "third_party_balance_inverted" => $thirdPartyBalance,
             "net_cash" => $netCash,
             "debt_to_bank" => $debt,
             "cashes" => $cashes

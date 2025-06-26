@@ -1,10 +1,10 @@
 <?php
 /**
  * Archivo: box_report.php
- * Descripción: Devuelve el total agrupado por tipo de transacción, por caja o por todas las cajas de un corresponsal.
+ * Descripción: Reporte agrupado por tipo de transacción, con ingresos simulados por transferencias recibidas.
  * Proyecto: COBAN365
  * Desarrollador: Mauricio Chara
- * Versión: 1.0.3
+ * Versión: 1.0.7
  * Fecha: 07-Jun-2025
  */
 
@@ -63,57 +63,61 @@ try {
             $params[":end_date"] = $endDate . " 23:59:59";
         }
 
-        // Obtener movimientos detallados por tipo
+        // Consulta mejorada incluyendo is_transfer y transfer_status
         $stmt = $pdo->prepare("SELECT 
                 t.transaction_type_id,
                 tt.name AS transaction_type_name,
                 tt.category,
                 tt.polarity,
+                t.is_transfer,
+                t.transfer_status,
                 SUM(t.cost) AS total
             FROM transactions t
             INNER JOIN transaction_types tt ON t.transaction_type_id = tt.id
             WHERE t.id_cash = :box_id
             $dateCondition
-            GROUP BY t.transaction_type_id, tt.name, tt.category, tt.polarity
+            GROUP BY t.transaction_type_id, tt.name, tt.category, tt.polarity, t.is_transfer, t.transfer_status
             ORDER BY tt.category, tt.name");
         $stmt->execute($params);
         $rawResults = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        // Obtener monto inicial
         $initStmt = $pdo->prepare("SELECT initial_amount FROM cash WHERE id = :id_cash LIMIT 1");
         $initStmt->execute([':id_cash' => $box['id']]);
         $initAmountRow = $initStmt->fetch(PDO::FETCH_ASSOC);
         $initialAmount = $initAmountRow ? floatval($initAmountRow['initial_amount']) : 0;
 
-        // Obtener transferencias recibidas con fecha
         $transferInStmt = $pdo->prepare("SELECT cost, created_at FROM transactions 
-            WHERE box_reference = :box_id AND is_transfer = 1 AND transfer_status = 1 $dateCondition");
+            WHERE box_reference = :box_id 
+              AND id_cash != :box_id
+              AND is_transfer = 1 
+              AND transfer_status = 1 
+              $dateCondition");
         $transferInStmt->execute($params);
         $transferIns = $transferInStmt->fetchAll(PDO::FETCH_ASSOC);
 
-        // Obtener transferencias realizadas con fecha
         $transferOutStmt = $pdo->prepare("SELECT cost, created_at FROM transactions 
-            WHERE id_cash = :box_id AND is_transfer = 1 AND transfer_status = 1 $dateCondition");
+            WHERE id_cash = :box_id 
+              AND is_transfer = 1 
+              AND transfer_status = 1 
+              $dateCondition");
         $transferOutStmt->execute($params);
         $transferOuts = $transferOutStmt->fetchAll(PDO::FETCH_ASSOC);
 
-        // Preparar transacciones simuladas
-        $simulated = [];
-
-        // Monto inicial como primer entrada
-        $simulated[] = [
-            "created_at" => "0000-00-00 00:00:00",
-            "transaction_type_name" => "Monto inicial",
-            "category" => "Inicial",
-            "ingresos" => $initialAmount,
-            "egresos" => 0,
-            "saldo_por_tipo" => $initialAmount
+        $simulated = [
+            [
+                "created_at" => "0000-00-00 00:00:00",
+                "transaction_type_name" => "Monto inicial",
+                "category" => "Inicial",
+                "ingresos" => $initialAmount,
+                "egresos" => 0,
+                "saldo_por_tipo" => $initialAmount
+            ]
         ];
 
         foreach ($transferIns as $t) {
             $simulated[] = [
                 "created_at" => $t['created_at'],
-                "transaction_type_name" => "Transferencia recibida",
+                "transaction_type_name" => "Transferencias recibidas (simulado)",
                 "category" => "Transferencia",
                 "ingresos" => floatval($t['cost']),
                 "egresos" => 0,
@@ -121,22 +125,20 @@ try {
             ];
         }
 
-        foreach ($transferOuts as $t) {
-            $simulated[] = [
-                "created_at" => $t['created_at'],
-                "transaction_type_name" => "Transferencia realizada",
-                "category" => "Transferencia",
-                "ingresos" => 0,
-                "egresos" => floatval($t['cost']),
-                "saldo_por_tipo" => -floatval($t['cost'])
-            ];
-        }
+
 
         $grouped = [];
         $ingresos = 0;
         $egresos = 0;
 
         foreach ($rawResults as $row) {
+            if (
+                $row["category"] === "Transferencia" &&
+                $row["is_transfer"] == 1 &&
+                $row["transfer_status"] == 1
+            )
+                continue;
+
             $typeId = $row['transaction_type_id'];
             $amount = floatval($row['total']);
             $category = $row["category"];
@@ -150,12 +152,6 @@ try {
                     "ingresos" => 0,
                     "egresos" => 0,
                 ];
-            }
-
-            if (strtolower($category) === "otros") {
-                $grouped[$typeId]["ingresos"] = 0;
-                $grouped[$typeId]["egresos"] = 0;
-                continue;
             }
 
             if ($polarity == 1) {
