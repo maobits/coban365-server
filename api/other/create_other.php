@@ -4,8 +4,8 @@
  * Descripción: Permite registrar un nuevo tercero en la base de datos y notifica al administrador del corresponsal.
  * Proyecto: COBAN365
  * Desarrollador: Mauricio Chara
- * Versión: 1.2.1
- * Fecha de actualización: 20-Jun-2025
+ * Versión: 1.2.2
+ * Fecha de actualización: 27-Jun-2025
  */
 
 header("Access-Control-Allow-Origin: *");
@@ -26,7 +26,6 @@ require_once "../../libs/src/Exception.php";
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 
-// Función para enviar notificación
 function notifyAdmin($adminEmail, $correspondentName, $other)
 {
     $mail = new PHPMailer(true);
@@ -41,9 +40,11 @@ function notifyAdmin($adminEmail, $correspondentName, $other)
         $mail->CharSet = 'UTF-8';
         $mail->setFrom('notifications@coban365.maobits.com', 'COBAN365');
         $mail->addAddress($adminEmail);
-
         $mail->isHTML(true);
+
         $mail->Subject = "🧾 Nuevo tercero registrado para el corresponsal $correspondentName";
+
+        $negBalanceText = $other['negative_balance'] ? "Sí (se le debe al corresponsal)" : "No (el corresponsal debe)";
 
         $mail->Body = "
             <div style='font-family: Arial, sans-serif; color: #333;'>
@@ -58,6 +59,7 @@ function notifyAdmin($adminEmail, $correspondentName, $other)
                     <tr><th>Dirección</th><td>{$other['address']}</td></tr>
                     <tr><th>Crédito</th><td>$ {$other['credit']}</td></tr>
                     <tr><th>Balance</th><td>$ {$other['balance']}</td></tr>
+                    <tr><th>Tipo de balance</th><td>$negBalanceText</td></tr>
                     <tr><th>Estado</th><td>" . ($other['state'] ? "Activo" : "Inactivo") . "</td></tr>
                 </table>
                 <p style='color: #888; font-size: 12px;'>COBAN365 - Sistema de gestión de corresponsales</p>
@@ -70,7 +72,6 @@ function notifyAdmin($adminEmail, $correspondentName, $other)
     }
 }
 
-// Verificar que la solicitud sea de tipo POST
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
     $data = json_decode(file_get_contents("php://input"), true);
 
@@ -83,6 +84,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     $name = trim($data["name"]);
     $credit = floatval($data["credit"]);
     $balance = floatval($data["balance"]);
+    $negative_balance = isset($data["negative_balance"]) && $data["negative_balance"] ? 1 : 0;
     $state = isset($data["state"]) ? intval($data["state"]) : 1;
     $id_type = trim($data["id_type"]);
     $id_number = trim($data["id_number"]);
@@ -93,9 +95,9 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     try {
         $stmt = $pdo->prepare("
             INSERT INTO others (
-                correspondent_id, name, id_type, id_number, email, phone, address, credit, balance, state
+                correspondent_id, name, id_type, id_number, email, phone, address, credit, balance, negative_balance, state
             ) VALUES (
-                :correspondent_id, :name, :id_type, :id_number, :email, :phone, :address, :credit, :balance, :state
+                :correspondent_id, :name, :id_type, :id_number, :email, :phone, :address, :credit, :balance, :negative_balance, :state
             )
         ");
 
@@ -108,6 +110,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         $stmt->bindParam(":address", $address, PDO::PARAM_STR);
         $stmt->bindParam(":credit", $credit);
         $stmt->bindParam(":balance", $balance);
+        $stmt->bindParam(":negative_balance", $negative_balance, PDO::PARAM_INT);
         $stmt->bindParam(":state", $state, PDO::PARAM_INT);
 
         if ($stmt->execute()) {
@@ -130,6 +133,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                     "address" => $address ?? "No proporcionado",
                     "credit" => number_format($credit, 2),
                     "balance" => number_format($balance, 2),
+                    "negative_balance" => $negative_balance,
                     "state" => $state
                 ]);
             }

@@ -4,8 +4,8 @@
  * Descripción: Permite actualizar los datos de un tercero (other).
  * Proyecto: COBAN365
  * Desarrollador: Mauricio Chara
- * Versión: 1.2.0
- * Fecha de actualización: 20-Jun-2025
+ * Versión: 1.2.1
+ * Fecha de actualización: 27-Jun-2025
  */
 
 // Habilitar CORS
@@ -46,6 +46,7 @@ $name = trim($data["name"]);
 $credit = floatval($data["credit"]);
 $balance = floatval($data["balance"]);
 $state = intval($data["state"]);
+$negative_balance = isset($data["negative_balance"]) ? (int) $data["negative_balance"] : 0;
 
 // Nuevos campos opcionales
 $id_type = isset($data["id_type"]) ? trim($data["id_type"]) : null;
@@ -63,6 +64,7 @@ try {
                 name = :name,
                 credit = :credit,
                 balance = :balance,
+                negative_balance = :negative_balance,
                 state = :state,
                 id_type = :id_type,
                 id_number = :id_number,
@@ -79,6 +81,7 @@ try {
         ":name" => $name,
         ":credit" => $credit,
         ":balance" => $balance,
+        ":negative_balance" => $negative_balance,
         ":state" => $state,
         ":id_type" => $id_type,
         ":id_number" => $id_number,
