@@ -126,7 +126,7 @@ try {
     }
 
     // 6. Caja neta
-    $netCash = $sumInitialAmounts + $thirdPartyBalance;
+    $netCash = $sumInitialAmounts;
 
     // 7. Deuda al banco
     $debtToBank = ($income - $withdrawals + $netCash) - $compensations;
