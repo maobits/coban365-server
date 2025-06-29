@@ -80,36 +80,41 @@ try {
 
     // 5. Saldo neto de terceros (como en third_party_balance_sheet, para TODOS los terceros del corresponsal)
     $stmt5 = $pdo->prepare("
-        SELECT id, balance, negative_balance
-        FROM others
-        WHERE correspondent_id = :correspondent_id
-    ");
+    SELECT id, balance, negative_balance
+    FROM others
+    WHERE correspondent_id = :correspondent_id
+");
     $stmt5->execute(["correspondent_id" => $correspondentId]);
     $thirdParties = $stmt5->fetchAll(PDO::FETCH_ASSOC);
 
     $thirdPartyBalance = 0;
+    $thirdPartyOpeningBalance = 0;
 
     foreach ($thirdParties as $third) {
         $thirdPartyId = intval($third["id"]);
         $initialBalance = floatval($third["balance"]);
         $isNegative = intval($third["negative_balance"]) === 1;
-        $initialDebt = $isNegative ? $initialBalance : 0;
+
+        // Aplicar la lógica correcta SOLO al saldo inicial
+        $initialEffect = $isNegative ? $initialBalance : -$initialBalance;
+
+        $thirdPartyOpeningBalance += $initialEffect;
 
         // Transacciones relacionadas
         $stmtTx = $pdo->prepare("
-            SELECT third_party_note, SUM(cost) AS total
-            FROM transactions
-            WHERE id_correspondent = :correspondent_id
-              AND client_reference = :third_party_id
-              AND state = 1
-              AND third_party_note IN (
-                  'debt_to_third_party',
-                  'charge_to_third_party',
-                  'loan_to_third_party',
-                  'loan_from_third_party'
-              )
-            GROUP BY third_party_note
-        ");
+        SELECT third_party_note, SUM(cost) AS total
+        FROM transactions
+        WHERE id_correspondent = :correspondent_id
+          AND client_reference = :third_party_id
+          AND state = 1
+          AND third_party_note IN (
+              'debt_to_third_party',
+              'charge_to_third_party',
+              'loan_to_third_party',
+              'loan_from_third_party'
+          )
+        GROUP BY third_party_note
+    ");
         $stmtTx->execute([
             "correspondent_id" => $correspondentId,
             "third_party_id" => $thirdPartyId
@@ -121,15 +126,18 @@ try {
         $loanTo = floatval($tx["loan_to_third_party"] ?? 0);
         $loanFrom = floatval($tx["loan_from_third_party"] ?? 0);
 
-        $netBalance = $initialDebt + $loanTo + $debt - $charge - $loanFrom;
+        // Calcular balance final neto de este tercero
+        $netBalance = $initialEffect + $loanTo + $debt - $charge - $loanFrom;
         $thirdPartyBalance += $netBalance;
     }
 
-    // 6. Caja neta
-    $netCash = $sumInitialAmounts;
+
+    // 6. Caja neta (caja + balance de terceros)
+    $netCash = $sumInitialAmounts + $thirdPartyBalance;
+
 
     // 7. Deuda al banco
-    $debtToBank = ($income - $withdrawals + $netCash) - $compensations;
+    $debtToBank = ($income - $withdrawals + ($sumInitialAmounts + $thirdPartyOpeningBalance)) - $compensations;
 
     // 8. Respuesta
     echo json_encode([
@@ -141,11 +149,13 @@ try {
             "compensations" => $compensations,
             "initial_cash_total" => $sumInitialAmounts,
             "third_party_balance" => $thirdPartyBalance,
+            "third_party_opening_balance" => $thirdPartyOpeningBalance,
             "net_cash" => $netCash,
             "debt_to_bank" => $debtToBank,
             "cashes" => $cashes
         ]
     ]);
+
 } catch (PDOException $e) {
     echo json_encode([
         "success" => false,

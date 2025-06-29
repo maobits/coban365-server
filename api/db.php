@@ -13,6 +13,14 @@ $dbname = "coban365"; // Nombre de la base de datos
 $username = "root"; // Usuario de la base de datos
 $password = ""; // Contraseña de la base de datos (cambiar en producción)
 
+// Production
+
+//$host = "195.35.61.14"; // Servidor de la base de datos
+//$dbname = "u429495711_coban365"; // Nombre de la base de datos
+//$username = "u429495711_coban365"; // Usuario de la base de datos
+//$password = "Coban365@"; // Contraseña de la base de datos (cambiar en producción)
+
+
 try {
     // Crear conexión con PDO
     $pdo = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8", $username, $password);

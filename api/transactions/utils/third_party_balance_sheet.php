@@ -86,11 +86,9 @@ try {
     $loanTo = floatval($results["loan_to_third_party"] ?? 0);
     $loanFrom = floatval($results["loan_from_third_party"] ?? 0);
 
-    // 1️⃣ Calcular deuda inicial solo si es negativa
-    $initialDebt = $isNegative ? $balance : 0;
-
     // 2️⃣ Saldo neto
-    $netBalance = $initialDebt + $loanTo + $debt - $charge - $loanFrom;
+    $netBalance = ($isNegative ? $balance : -$balance) + $loanTo + $debt - $charge - $loanFrom;
+
 
     // 3️⃣ Cupo disponible = crédito - deuda actual (si está en deuda)
     $availableCredit = $netBalance >= 0
