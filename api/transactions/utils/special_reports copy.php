@@ -25,6 +25,7 @@ require_once "../../db.php";
 $data = json_decode(file_get_contents("php://input"), true);
 $dateFilter = isset($data["date"]) ? $data["date"] : null;
 
+
 if (!isset($data["id_cash"]) || !isset($data["id_correspondent"])) {
     echo json_encode([
         "success" => false,
@@ -77,7 +78,17 @@ try {
     $stmt->execute();
     $result = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    if (!$result) {
+    if ($result) {
+        $response["report"]["initial_box"] = floatval($result["initial_amount"]);
+        $response["report"]["cash"] = [
+            "id" => intval($result["cash_id"]),
+            "name" => $result["cash_name"]
+        ];
+        $response["report"]["correspondent"] = [
+            "code" => $result["correspondent_code"],
+            "name" => $result["correspondent_name"]
+        ];
+    } else {
         echo json_encode([
             "success" => false,
             "message" => "No se encontró la caja con el corresponsal especificado."
@@ -85,57 +96,10 @@ try {
         exit();
     }
 
-    // Calcular saldo acumulado previo a la fecha
-    $balanceStmt = $pdo->prepare("
-        SELECT t.cost, t.polarity, t.neutral, t.is_transfer, t.transfer_status,
-               t.id_cash, t.box_reference
-        FROM transactions t
-        WHERE t.state = 1 AND (t.id_cash = :id_cash OR t.box_reference = :id_cash)
-        AND DATE(t.created_at) < DATE(:filter_date)
-    ");
-    $balanceStmt->bindParam(":id_cash", $id_cash, PDO::PARAM_INT);
-    $balanceStmt->bindValue(":filter_date", $dateFilter ?? date("Y-m-d"));
-    $balanceStmt->execute();
-    $pastTransactions = $balanceStmt->fetchAll(PDO::FETCH_ASSOC);
-
-    $accumulatedBalance = floatval($result["initial_amount"]);
-
-    foreach ($pastTransactions as $pt) {
-        if (intval($pt["neutral"]) === 1)
-            continue;
-
-        $isTransfer = intval($pt["is_transfer"]) === 1;
-        $isAccepted = intval($pt["transfer_status"]) === 1;
-        $isOrigin = intval($pt["id_cash"]) === $id_cash;
-        $isDestination = intval($pt["box_reference"]) === $id_cash;
-
-        $polarity = intval($pt["polarity"]);
-        if ($isTransfer && $isAccepted) {
-            if ($isDestination && !$isOrigin)
-                $polarity = 1;
-            elseif ($isOrigin && !$isDestination)
-                $polarity = 0;
-        }
-
-        $cost = floatval($pt["cost"]);
-        $accumulatedBalance += ($polarity === 0) ? -$cost : $cost;
-    }
-
-    // Reemplazar caja inicial con saldo real acumulado
-    $response["report"]["initial_box"] = round($accumulatedBalance);
-    $response["report"]["cash"] = [
-        "id" => intval($result["cash_id"]),
-        "name" => $result["cash_name"]
-    ];
-
-    $response["report"]["correspondent"] = [
-        "id" => $id_correspondent, // 👈 ID explícito
-        "code" => $result["correspondent_code"],
-        "name" => $result["correspondent_name"]
-    ];
 
 
-    // Consultar transacciones del día seleccionado
+
+    // Consultar transacciones
     $txStmt = $pdo->prepare("
         SELECT 
             t.*, tt.name AS transaction_type_name, tt.polarity,
@@ -147,12 +111,18 @@ try {
         LEFT JOIN cash ca ON t.id_cash = ca.id
         LEFT JOIN cash ca2 ON t.box_reference = ca2.id
         LEFT JOIN others o ON t.client_reference = o.id
-        WHERE t.state = 1 AND (t.id_cash = :id_cash OR t.box_reference = :id_cash)
+       WHERE t.state = 1 AND (t.id_cash = :id_cash OR t.box_reference = :id_cash)
         AND DATE(t.created_at) = DATE(:filter_date)
         ORDER BY t.created_at DESC
     ");
     $txStmt->bindParam(":id_cash", $id_cash, PDO::PARAM_INT);
-    $txStmt->bindValue(":filter_date", $dateFilter ?? date("Y-m-d"));
+    if ($dateFilter) {
+        $txStmt->bindParam(":filter_date", $dateFilter);
+    } else {
+        $today = date("Y-m-d");
+        $txStmt->bindParam(":filter_date", $today);
+    }
+
     $txStmt->execute();
     $transactions = $txStmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -161,8 +131,10 @@ try {
     $countedTransactions = 0;
 
     foreach ($transactions as &$tx) {
-        if (intval($tx["neutral"]) === 1)
+        // OMITIR si es neutral
+        if (intval($tx["neutral"]) === 1) {
             continue;
+        }
 
         $isTransfer = intval($tx["is_transfer"]) === 1;
         $isAccepted = intval($tx["transfer_status"]) === 1;
@@ -190,13 +162,17 @@ try {
         $subtotal = ($polarity === 0) ? -$cost : $cost;
 
         if (!isset($summaryByType[$type])) {
-            $summaryByType[$type] = ["type" => $type, "count" => 0, "subtotal" => 0];
+            $summaryByType[$type] = [
+                "type" => $type,
+                "count" => 0,
+                "subtotal" => 0
+            ];
         }
 
         $summaryByType[$type]["count"] += 1;
         $summaryByType[$type]["subtotal"] += $subtotal;
 
-        $countedTransactions++;
+        $countedTransactions++; // solo si no es neutral
     }
 
     $summaryList = array_values(array_map(function ($item) {
@@ -207,11 +183,13 @@ try {
         ];
     }, $summaryByType));
 
+    // Calcular saldo
     $cashBalance = $response["report"]["initial_box"];
     foreach ($summaryList as $s) {
         $cashBalance += $s["subtotal"];
     }
 
+    // Incluir resumen en respuesta
     $response["report"]["transactions"] = [
         "total" => $countedTransactions,
         "summary" => $summaryList,

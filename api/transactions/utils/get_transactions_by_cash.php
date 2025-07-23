@@ -5,8 +5,8 @@
  * Incluye también transferencias entrantes donde box_reference = id_cash.
  * Proyecto: COBAN365
  * Desarrollador: Mauricio Chara
- * Versión: 1.4.0
- * Fecha: 27-May-2025
+ * Versión: 1.4.1
+ * Fecha: 21-Jul-2025
  */
 
 header("Access-Control-Allow-Origin: *");
@@ -34,6 +34,7 @@ $page = isset($_GET["page"]) ? max(1, intval($_GET["page"])) : 1;
 $perPage = isset($_GET["per_page"]) ? max(1, intval($_GET["per_page"])) : 20;
 $offset = ($page - 1) * $perPage;
 $category = isset($_GET["category"]) ? trim($_GET["category"]) : null;
+$dateFilter = isset($_GET["date"]) ? trim($_GET["date"]) : null;
 
 try {
     // Total combinando transacciones salientes y transferencias entrantes
@@ -45,10 +46,16 @@ try {
     if ($category) {
         $countSql .= " AND tt.category = :category";
     }
+    if ($dateFilter) {
+        $countSql .= " AND DATE(t.created_at) = :date";
+    }
     $countStmt = $pdo->prepare($countSql);
     $countStmt->bindParam(":id_cash", $id_cash, PDO::PARAM_INT);
     if ($category) {
         $countStmt->bindParam(":category", $category, PDO::PARAM_STR);
+    }
+    if ($dateFilter) {
+        $countStmt->bindParam(":date", $dateFilter);
     }
     $countStmt->execute();
     $total = $countStmt->fetchColumn();
@@ -75,12 +82,18 @@ try {
     if ($category) {
         $sql .= " AND tt.category = :category";
     }
+    if ($dateFilter) {
+        $sql .= " AND DATE(t.created_at) = :date";
+    }
     $sql .= " ORDER BY t.created_at DESC LIMIT :limit OFFSET :offset";
 
     $stmt = $pdo->prepare($sql);
     $stmt->bindParam(":id_cash", $id_cash, PDO::PARAM_INT);
     if ($category) {
         $stmt->bindParam(":category", $category, PDO::PARAM_STR);
+    }
+    if ($dateFilter) {
+        $stmt->bindParam(":date", $dateFilter);
     }
     $stmt->bindParam(":limit", $perPage, PDO::PARAM_INT);
     $stmt->bindParam(":offset", $offset, PDO::PARAM_INT);

@@ -6,8 +6,8 @@ date_default_timezone_set('America/Bogota'); // Hora local de Bogotá
  * Descripción: Registra una nueva transacción con utilidad, nombre de tipo y valor opcional client_reference.
  * Proyecto: COBAN365
  * Desarrollador: Mauricio Chara
- * Versión: 1.3.0
- * Fecha de actualización: 21-May-2025
+ * Versión: 1.3.1
+ * Fecha de actualización: 22-Jul-2025
  */
 
 header("Access-Control-Allow-Origin: *");
@@ -51,6 +51,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     $utility = isset($data["utility"]) ? floatval($data["utility"]) : 0;
     $client_reference = isset($data["client_reference"]) ? $data["client_reference"] : null;
     $state = 1;
+    $created_at = date("Y-m-d H:i:s"); // 🕒 Fecha actual con zona horaria Bogotá
 
     try {
         // Obtener el nombre y categoría del tipo de transacción
@@ -70,16 +71,16 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         $note = $type["name"];
         $neutral = (strtolower($type["category"]) === "otros") ? 1 : 0;
 
-        // Insertar transacción
+        // Insertar transacción con fecha
         $stmt = $pdo->prepare("
             INSERT INTO transactions (
                 id_cashier, id_cash, id_correspondent,
                 transaction_type_id, polarity, cost,
-                state, note, client_reference, utility, neutral
+                state, note, client_reference, utility, neutral, created_at
             ) VALUES (
                 :id_cashier, :id_cash, :id_correspondent,
                 :transaction_type_id, :polarity, :cost,
-                :state, :note, :client_reference, :utility, :neutral
+                :state, :note, :client_reference, :utility, :neutral, :created_at
             )
         ");
 
@@ -94,11 +95,13 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         $stmt->bindParam(":client_reference", $client_reference, PDO::PARAM_STR);
         $stmt->bindParam(":utility", $utility);
         $stmt->bindParam(":neutral", $neutral, PDO::PARAM_BOOL);
+        $stmt->bindParam(":created_at", $created_at); // ⏰ nueva fecha desde PHP
 
         if ($stmt->execute()) {
             echo json_encode([
                 "success" => true,
-                "message" => "Transacción registrada exitosamente."
+                "message" => "Transacción registrada exitosamente.",
+                "timestamp" => $created_at
             ]);
         } else {
             echo json_encode([
