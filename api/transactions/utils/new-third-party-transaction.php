@@ -1,5 +1,5 @@
 <?php
-date_default_timezone_set('America/Bogota');
+date_default_timezone_set('America/Bogota'); // 🕒 Hora local de Bogotá
 
 /**
  * Archivo: new-third-party-transaction.php
@@ -51,6 +51,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     $client_reference = intval($data["client_reference"]);
     $utility = isset($data["utility"]) ? floatval($data["utility"]) : 0;
     $state = 1;
+    $created_at = date("Y-m-d H:i:s"); // ⏰ Fecha y hora actual de Bogotá
 
     // Determinar polaridad automáticamente
     $expectedPolarityMap = [
@@ -88,18 +89,20 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         $note = $type["name"];
         $neutral = (strtolower($type["category"]) === "otros") ? 1 : 0;
 
-        // Insertar transacción
+        // Insertar transacción con fecha
         $insert = $pdo->prepare("
             INSERT INTO transactions (
                 id_cashier, id_cash, id_correspondent,
                 transaction_type_id, polarity, cost,
                 state, note, third_party_note,
-                utility, neutral, client_reference
+                utility, neutral, client_reference,
+                created_at
             ) VALUES (
                 :id_cashier, :id_cash, :id_correspondent,
                 :transaction_type_id, :polarity, :cost,
                 :state, :note, :third_party_note,
-                :utility, :neutral, :client_reference
+                :utility, :neutral, :client_reference,
+                :created_at
             )
         ");
 
@@ -115,11 +118,13 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         $insert->bindParam(":utility", $utility);
         $insert->bindParam(":neutral", $neutral, PDO::PARAM_BOOL);
         $insert->bindParam(":client_reference", $client_reference, PDO::PARAM_INT);
+        $insert->bindParam(":created_at", $created_at); // 🕒
 
         if ($insert->execute()) {
             echo json_encode([
                 "success" => true,
-                "message" => "Transacción registrada exitosamente con polaridad automática."
+                "message" => "Transacción registrada exitosamente con polaridad automática.",
+                "timestamp" => $created_at
             ]);
         } else {
             echo json_encode([
