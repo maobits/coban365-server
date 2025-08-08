@@ -3,11 +3,11 @@ date_default_timezone_set('America/Bogota'); // Hora local de Bogotá
 
 /**
  * Archivo: new_transaction.php
- * Descripción: Registra una nueva transacción con utilidad, nombre de tipo y valor opcional client_reference.
+ * Descripción: Registra una nueva transacción con utilidad, nombre de tipo, valor opcional client_reference y cash_tag.
  * Proyecto: COBAN365
  * Desarrollador: Mauricio Chara
- * Versión: 1.3.1
- * Fecha de actualización: 22-Jul-2025
+ * Versión: 1.3.2
+ * Fecha de actualización: 07-Ago-2025
  */
 
 header("Access-Control-Allow-Origin: *");
@@ -50,6 +50,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     $cost = floatval($data["cost"]);
     $utility = isset($data["utility"]) ? floatval($data["utility"]) : 0;
     $client_reference = isset($data["client_reference"]) ? $data["client_reference"] : null;
+    $cash_tag = isset($data["cash_tag"]) ? floatval($data["cash_tag"]) : null; // 🆕 nuevo campo
     $state = 1;
     $created_at = date("Y-m-d H:i:s"); // 🕒 Fecha actual con zona horaria Bogotá
 
@@ -68,19 +69,19 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             exit;
         }
 
-        $note = $type["name"];
+        $note = "-";
         $neutral = (strtolower($type["category"]) === "otros") ? 1 : 0;
 
-        // Insertar transacción con fecha
+        // Insertar transacción con fecha y cash_tag
         $stmt = $pdo->prepare("
             INSERT INTO transactions (
                 id_cashier, id_cash, id_correspondent,
                 transaction_type_id, polarity, cost,
-                state, note, client_reference, utility, neutral, created_at
+                state, note, client_reference, utility, neutral, created_at, cash_tag
             ) VALUES (
                 :id_cashier, :id_cash, :id_correspondent,
                 :transaction_type_id, :polarity, :cost,
-                :state, :note, :client_reference, :utility, :neutral, :created_at
+                :state, :note, :client_reference, :utility, :neutral, :created_at, :cash_tag
             )
         ");
 
@@ -95,7 +96,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         $stmt->bindParam(":client_reference", $client_reference, PDO::PARAM_STR);
         $stmt->bindParam(":utility", $utility);
         $stmt->bindParam(":neutral", $neutral, PDO::PARAM_BOOL);
-        $stmt->bindParam(":created_at", $created_at); // ⏰ nueva fecha desde PHP
+        $stmt->bindParam(":created_at", $created_at);
+        $stmt->bindParam(":cash_tag", $cash_tag);
 
         if ($stmt->execute()) {
             echo json_encode([

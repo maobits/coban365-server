@@ -5,7 +5,7 @@
  *              agrupando cada tercero como una "caja" e incluyendo detalle por tercero.
  * Proyecto: COBAN365
  * Desarrollador: Mauricio Chara
- * Versión: 1.3.2
+ * Versión: 1.3.1
  * Fecha: 27-Jul-2025
  */
 
@@ -58,7 +58,7 @@ try {
         $balance = floatval($third["balance"]);
         $isNegative = intval($third["negative_balance"]) === 1;
 
-        // Totales por tipo de movimiento
+        // 1️⃣ Totales por tipo de movimiento (filtrados por fecha si aplica)
         $queryTotals = "
             SELECT third_party_note, SUM(cost) AS total
             FROM transactions
@@ -89,7 +89,7 @@ try {
         $loanTo = floatval($results["loan_to_third_party"] ?? 0);
         $loanFrom = floatval($results["loan_from_third_party"] ?? 0);
 
-        // Detalle de movimientos
+        // 2️⃣ Detalle de movimientos (sin filtro de fecha)
         $queryDetails = "
             SELECT 
                 t.id, 
@@ -119,17 +119,17 @@ try {
         ]);
         $details = $stmtDetails->fetchAll(PDO::FETCH_ASSOC);
 
-        // Cálculo neto real: saldo + abonos - deudas
-        $netBalance = $balance + $loanTo + $charge - $debt - $loanFrom;
+        // 3️⃣ Cálculo de saldos
+        $netBalance = ($isNegative ? $balance : -$balance) + $loanTo + $debt - $charge - $loanFrom;
         $availableCredit = $netBalance >= 0 ? max(0, $creditLimit - $netBalance) : $creditLimit;
 
-        // Agrega al resumen
+        // 4️⃣ Construcción del resumen por tercero
         $summary[] = [
             "id" => $id,
             "name" => $name,
             "credit_limit" => $creditLimit,
             "balance" => $isNegative ? -$balance : $balance,
-            "display_balance" => abs($balance),
+            "display_balance" => $isNegative ? -abs($balance) : abs($balance),
             "net_balance" => $netBalance,
             "display_net_balance" => abs($netBalance),
             "available_credit" => $availableCredit,
@@ -140,6 +140,7 @@ try {
             "negative_balance" => $isNegative,
             "movements" => $details
         ];
+
 
         $total_credit += $creditLimit;
         $total_balance += ($isNegative ? -$balance : $balance);

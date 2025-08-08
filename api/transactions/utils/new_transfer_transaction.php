@@ -6,8 +6,8 @@ date_default_timezone_set('America/Bogota'); // Hora local de Bogotá
  * Descripción: Registra una nueva transferencia entre cajas.
  * Proyecto: COBAN365
  * Desarrollador: Mauricio Chara
- * Versión: 1.0.0
- * Fecha: 27-May-2025
+ * Versión: 1.2.0
+ * Fecha: 27-May-2025 (actualizado 08-Ago-2025)
  */
 
 header("Access-Control-Allow-Origin: *");
@@ -48,6 +48,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     $transaction_type_id = intval($data["transaction_type_id"]);
     $cost = floatval($data["cost"]);
     $box_reference = intval($data["box_reference"]);
+    $cash_tag = isset($data["cash_tag"]) ? floatval($data["cash_tag"]) : null; // ✅ nuevo (opcional)
 
     // Valores por defecto para transferencia
     $polarity = 0;
@@ -56,9 +57,10 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     $state = 1;
     $is_transfer = 1;
     $transfer_status = 0; // Requiere aprobación
+    $created_at = date("Y-m-d H:i:s"); // Fecha actual en Bogotá
 
     try {
-        // Obtener nombre del tipo de transacción
+        // Obtener nombre del tipo de transacción (se conserva)
         $typeStmt = $pdo->prepare("SELECT name FROM transaction_types WHERE id = :id");
         $typeStmt->bindParam(":id", $transaction_type_id, PDO::PARAM_INT);
         $typeStmt->execute();
@@ -72,20 +74,37 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             exit;
         }
 
-        $note = "Transferencia: " . $type["name"];
+        // ✅ Obtener nombre de la caja ORIGEN
+        $originStmt = $pdo->prepare("SELECT name FROM cash WHERE id = :id");
+        $originStmt->bindParam(":id", $id_cash, PDO::PARAM_INT);
+        $originStmt->execute();
+        $originCash = $originStmt->fetch(PDO::FETCH_ASSOC);
 
-        // Insertar transacción
+        // ✅ Obtener nombre de la caja DESTINO
+        $cashStmt = $pdo->prepare("SELECT name FROM cash WHERE id = :id");
+        $cashStmt->bindParam(":id", $box_reference, PDO::PARAM_INT);
+        $cashStmt->execute();
+        $destCash = $cashStmt->fetch(PDO::FETCH_ASSOC);
+
+        // ✅ Nota: "Origen a Destino"
+        $note = ($originCash ? $originCash["name"] : "Caja origen") . " a " . ($destCash ? $destCash["name"] : "Caja destino");
+
+        // Insertar transacción (agregado cash_tag)
         $stmt = $pdo->prepare("
             INSERT INTO transactions (
                 id_cashier, id_cash, id_correspondent,
                 transaction_type_id, polarity, cost,
                 state, note, utility, neutral,
-                is_transfer, box_reference, transfer_status
+                is_transfer, box_reference, transfer_status,
+                cash_tag,
+                created_at
             ) VALUES (
                 :id_cashier, :id_cash, :id_correspondent,
                 :transaction_type_id, :polarity, :cost,
                 :state, :note, :utility, :neutral,
-                :is_transfer, :box_reference, :transfer_status
+                :is_transfer, :box_reference, :transfer_status,
+                :cash_tag,
+                :created_at
             )
         ");
 
@@ -102,11 +121,21 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         $stmt->bindParam(":is_transfer", $is_transfer, PDO::PARAM_INT);
         $stmt->bindParam(":box_reference", $box_reference, PDO::PARAM_INT);
         $stmt->bindParam(":transfer_status", $transfer_status, PDO::PARAM_INT);
+        // cash_tag puede ser NULL
+        if ($cash_tag === null) {
+            $stmt->bindValue(":cash_tag", null, PDO::PARAM_NULL);
+        } else {
+            $stmt->bindValue(":cash_tag", $cash_tag);
+        }
+        $stmt->bindParam(":created_at", $created_at);
 
         if ($stmt->execute()) {
             echo json_encode([
                 "success" => true,
-                "message" => "Transferencia registrada exitosamente."
+                "message" => "Transferencia registrada exitosamente.",
+                "created_at" => $created_at,
+                "note" => $note,
+                "cash_tag" => $cash_tag
             ]);
         } else {
             echo json_encode([

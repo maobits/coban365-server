@@ -3,11 +3,12 @@ date_default_timezone_set('America/Bogota'); // Hora local de Bogotá
 
 /**
  * Archivo: new_clearing_transaction.php
- * Descripción: Registra una transacción de compensación con utilidad y nota clave 'offset_transaction'.
+ * Descripción: Registra una transacción de compensación con utilidad, nota clave 'offset_transaction' y etiqueta de caja (cash_tag).
  * Proyecto: COBAN365
  * Desarrollador: Mauricio Chara
- * Versión: 1.0.0
+ * Versión: 1.1.0
  * Fecha de creación: 26-May-2025
+ * Fecha de modificación: 07-Ago-2025
  */
 
 header("Access-Control-Allow-Origin: *");
@@ -32,7 +33,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         $data["id_correspondent"],
         $data["transaction_type_id"],
         $data["polarity"],
-        $data["cost"]
+        $data["cost"],
+        $data["cash_tag"] // ← requerido ahora
     )
     ) {
         echo json_encode([
@@ -48,8 +50,10 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     $transaction_type_id = intval($data["transaction_type_id"]);
     $polarity = boolval($data["polarity"]);
     $cost = floatval($data["cost"]);
+    $cash_tag = trim($data["cash_tag"]); // ← nuevo campo
     $utility = isset($data["utility"]) ? floatval($data["utility"]) : 0;
     $state = 1;
+    $created_at = date("Y-m-d H:i:s"); // Hora actual Bogotá
 
     try {
         // Obtener el nombre y categoría del tipo de transacción
@@ -70,16 +74,18 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         $note = "offset_transaction";
         $neutral = 0; // Siempre se marca como neutral
 
-        // Insertar transacción
+        // Insertar transacción con cash_tag
         $stmt = $pdo->prepare("
             INSERT INTO transactions (
                 id_cashier, id_cash, id_correspondent,
                 transaction_type_id, polarity, cost,
-                state, note, client_reference, utility, neutral
+                state, note, client_reference, utility,
+                neutral, created_at, cash_tag
             ) VALUES (
                 :id_cashier, :id_cash, :id_correspondent,
                 :transaction_type_id, :polarity, :cost,
-                :state, :note, NULL, :utility, :neutral
+                :state, :note, NULL, :utility,
+                :neutral, :created_at, :cash_tag
             )
         ");
 
@@ -93,11 +99,14 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         $stmt->bindParam(":note", $note, PDO::PARAM_STR);
         $stmt->bindParam(":utility", $utility);
         $stmt->bindParam(":neutral", $neutral, PDO::PARAM_BOOL);
+        $stmt->bindParam(":created_at", $created_at, PDO::PARAM_STR);
+        $stmt->bindParam(":cash_tag", $cash_tag, PDO::PARAM_STR); // ← nuevo campo
 
         if ($stmt->execute()) {
             echo json_encode([
                 "success" => true,
-                "message" => "Transacción de compensación registrada exitosamente."
+                "message" => "Transacción de compensación registrada exitosamente.",
+                "cash_tag" => $cash_tag
             ]);
         } else {
             echo json_encode([

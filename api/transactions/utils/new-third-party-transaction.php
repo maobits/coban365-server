@@ -50,6 +50,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     $third_party_note = $data["third_party_note"];
     $client_reference = intval($data["client_reference"]);
     $utility = isset($data["utility"]) ? floatval($data["utility"]) : 0;
+    $cash_tag = isset($data["cash_tag"]) ? floatval($data["cash_tag"]) : null; // 🆕
     $state = 1;
     $created_at = date("Y-m-d H:i:s"); // ⏰ Fecha y hora actual de Bogotá
 
@@ -86,23 +87,31 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             exit;
         }
 
-        $note = $type["name"];
+        // 🆕 Obtener el nombre del tercero para guardarlo en 'note'
+        $thirdStmt = $pdo->prepare("SELECT name FROM others WHERE id = :id");
+        $thirdStmt->bindParam(":id", $client_reference, PDO::PARAM_INT);
+        $thirdStmt->execute();
+        $third = $thirdStmt->fetch(PDO::FETCH_ASSOC);
+
+        // note = nombre del tercero (si no existe, deja el nombre del tipo como respaldo)
+        $note = $third && !empty($third["name"]) ? $third["name"] : $type["name"];
+
         $neutral = (strtolower($type["category"]) === "otros") ? 1 : 0;
 
-        // Insertar transacción con fecha
+        // Insertar transacción con fecha + cash_tag
         $insert = $pdo->prepare("
             INSERT INTO transactions (
                 id_cashier, id_cash, id_correspondent,
                 transaction_type_id, polarity, cost,
                 state, note, third_party_note,
                 utility, neutral, client_reference,
-                created_at
+                created_at, cash_tag
             ) VALUES (
                 :id_cashier, :id_cash, :id_correspondent,
                 :transaction_type_id, :polarity, :cost,
                 :state, :note, :third_party_note,
                 :utility, :neutral, :client_reference,
-                :created_at
+                :created_at, :cash_tag
             )
         ");
 
@@ -113,12 +122,13 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         $insert->bindParam(":polarity", $polarity, PDO::PARAM_BOOL);
         $insert->bindParam(":cost", $cost);
         $insert->bindParam(":state", $state, PDO::PARAM_INT);
-        $insert->bindParam(":note", $note, PDO::PARAM_STR);
+        $insert->bindParam(":note", $note, PDO::PARAM_STR); // 🆕 nombre del tercero
         $insert->bindParam(":third_party_note", $third_party_note, PDO::PARAM_STR);
         $insert->bindParam(":utility", $utility);
         $insert->bindParam(":neutral", $neutral, PDO::PARAM_BOOL);
         $insert->bindParam(":client_reference", $client_reference, PDO::PARAM_INT);
         $insert->bindParam(":created_at", $created_at); // 🕒
+        $insert->bindParam(":cash_tag", $cash_tag);     // 🆕
 
         if ($insert->execute()) {
             echo json_encode([

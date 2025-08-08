@@ -5,8 +5,8 @@
  * Incluye también transferencias entrantes donde box_reference = id_cash.
  * Proyecto: COBAN365
  * Desarrollador: Mauricio Chara
- * Versión: 1.4.1
- * Fecha: 21-Jul-2025
+ * Versión: 1.4.2
+ * Fecha: 21-Jul-2025 (Actualizado 08-Ago-2025 para incluir cash_tag)
  */
 
 header("Access-Control-Allow-Origin: *");
@@ -61,10 +61,11 @@ try {
     $total = $countStmt->fetchColumn();
     $totalPages = ceil($total / $perPage);
 
-    // Obtener transacciones propias y entrantes
+    // Obtener transacciones propias y entrantes (incluyendo cash_tag)
     $sql = "
         SELECT 
             t.*,
+            t.cash_tag, /* 👈 Incluido explícitamente */
             tt.name AS transaction_type_name,
             c.name AS correspondent_name,
             ca.name AS cash_name,
@@ -85,7 +86,7 @@ try {
     if ($dateFilter) {
         $sql .= " AND DATE(t.created_at) = :date";
     }
-    $sql .= " ORDER BY t.created_at DESC LIMIT :limit OFFSET :offset";
+    $sql .= " ORDER BY t.id DESC LIMIT :limit OFFSET :offset";
 
     $stmt = $pdo->prepare($sql);
     $stmt->bindParam(":id_cash", $id_cash, PDO::PARAM_INT);
