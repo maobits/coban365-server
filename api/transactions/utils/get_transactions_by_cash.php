@@ -3,10 +3,11 @@
  * Archivo: get_transactions_by_cash.php
  * Descripción: Retorna transacciones paginadas de una caja específica con todos los detalles.
  * Incluye también transferencias entrantes donde box_reference = id_cash.
+ * Además, si se recibe `date=YYYY-MM-DD`, verifica si la caja está cerrada en esa fecha
+ * (tabla cash_closing_register) e incluye el registro de cash_balance de esa fecha.
  * Proyecto: COBAN365
- * Desarrollador: Mauricio Chara
- * Versión: 1.4.5
- * Fecha: 10-Ago-2025 (Cat::Subcat + RANGO en category + soporte min/max por query)
+ * Versión: 1.4.6
+ * Fecha: 11-Ago-2025
  */
 
 header("Access-Control-Allow-Origin: *");
@@ -46,13 +47,11 @@ $subcategory = null;
 
 if ($rawCat) {
     $parts = array_map('trim', explode('::', $rawCat));
-    // part[0] = categoría
     $category = $parts[0] ?? null;
 
-    // Función para parsear "RANGO=min-max"
     $parseRange = function ($token) {
         if (strpos($token, 'RANGO=') === 0) {
-            $payload = substr($token, 6); // quita "RANGO="
+            $payload = substr($token, 6);
             [$a, $b] = array_pad(explode('-', $payload, 2), 2, '');
             $min = ($a !== '') ? floatval($a) : null;
             $max = ($b !== '') ? floatval($b) : null;
@@ -61,12 +60,10 @@ if ($rawCat) {
         return null;
     };
 
-    // parts[1] puede ser subcat o RANGO
     if (isset($parts[1])) {
         $r1 = $parseRange($parts[1]);
         if ($r1) {
             [$minValueFromCat, $maxValueFromCat] = $r1;
-            // El rango dentro de category tiene prioridad sobre los query params
             $minValue = $minValueFromCat;
             $maxValue = $maxValueFromCat;
         } else {
@@ -74,7 +71,6 @@ if ($rawCat) {
         }
     }
 
-    // parts[2] si existe, intentamos RANGO
     if (isset($parts[2])) {
         $r2 = $parseRange($parts[2]);
         if ($r2) {
@@ -106,9 +102,9 @@ try {
     if ($dateFilter)
         $countSql .= " AND DATE(t.created_at) = :date";
     if ($minValue !== null)
-        $countSql .= " AND t.cost >= :min_value"; // ⬅️ usa tu columna real
+        $countSql .= " AND t.cost >= :min_value";
     if ($maxValue !== null)
-        $countSql .= " AND t.cost <= :max_value"; // ⬅️ usa tu columna real
+        $countSql .= " AND t.cost <= :max_value";
 
     $countStmt = $pdo->prepare($countSql);
     $countStmt->bindParam(":id_cash", $id_cash, PDO::PARAM_INT);
@@ -153,9 +149,9 @@ try {
     if ($dateFilter)
         $sql .= " AND DATE(t.created_at) = :date";
     if ($minValue !== null)
-        $sql .= " AND t.cost >= :min_value"; // ⬅️ usa tu columna real
+        $sql .= " AND t.cost >= :min_value";
     if ($maxValue !== null)
-        $sql .= " AND t.cost <= :max_value"; // ⬅️ usa tu columna real
+        $sql .= " AND t.cost <= :max_value";
     $sql .= " ORDER BY t.id DESC LIMIT :limit OFFSET :offset";
 
     $stmt = $pdo->prepare($sql);
@@ -205,12 +201,49 @@ try {
         $tx["formatted_date"] = $datetime->format("d-m-Y h:i a");
     }
 
+    // ---------- Verificación de cierre y cash_balance (USANDO date del filtro) ----------
+    $isClosed = false;
+    $cashBalanceRow = null;
+
+    if ($dateFilter) {
+        // 1) ¿Hay cierre en cash_closing_register para esa fecha y caja?
+        $closeStmt = $pdo->prepare("
+            SELECT id, cash_id, closing_date, closing_time, closed_by, note, created_at
+            FROM cash_closing_register
+            WHERE cash_id = :cash_id AND closing_date = :closing_date
+            LIMIT 1
+        ");
+        $closeStmt->execute([
+            ":cash_id" => $id_cash,
+            ":closing_date" => $dateFilter
+        ]);
+        $closingRow = $closeStmt->fetch(PDO::FETCH_ASSOC);
+        $isClosed = $closingRow ? true : false;
+
+        // 2) Traer el registro de cash_balance (si existe) para esa fecha y caja
+        $balanceStmt = $pdo->prepare("
+            SELECT *
+            FROM cash_balance
+            WHERE cash_id = :cash_id AND balance_date = :balance_date
+            ORDER BY id DESC
+            LIMIT 1
+        ");
+        $balanceStmt->execute([
+            ":cash_id" => $id_cash,
+            ":balance_date" => $dateFilter
+        ]);
+        $cashBalanceRow = $balanceStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+    }
+
     echo json_encode([
         "success" => true,
         "data" => [
             "items" => $transactions,
             "total" => $total,
-            "total_pages" => $totalPages
+            "total_pages" => $totalPages,
+            // 👇 agregado según lo solicitado
+            "is_closed" => $isClosed,          // true si existe cierre para esa fecha en cash_closing_register
+            "cash_balance" => $cashBalanceRow     // fila de cash_balance (o null si no existe)
         ]
     ]);
 } catch (PDOException $e) {
