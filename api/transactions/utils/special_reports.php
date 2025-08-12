@@ -4,8 +4,8 @@
  * Descripción: Reportes especiales personalizados para una caja específica.
  * Proyecto: COBAN365
  * Desarrollador: Mauricio Chara
- * Versión: 1.1.5
- * Fecha: 09-Jul-2025
+ * Versión: 1.1.6
+ * Fecha: 11-Jul-2025
  */
 
 date_default_timezone_set('America/Bogota');
@@ -62,11 +62,15 @@ $response = [
 ];
 
 try {
-    // Obtener datos de caja y corresponsal
+    // Obtener datos de caja y corresponsal (incluye estado 'open')
     $stmt = $pdo->prepare("
         SELECT 
-            cash.initial_amount, cash.id AS cash_id, cash.name AS cash_name,
-            correspondents.code AS correspondent_code, correspondents.name AS correspondent_name
+            cash.initial_amount, 
+            cash.id AS cash_id, 
+            cash.name AS cash_name,
+            cash.open AS cash_open,
+            correspondents.code AS correspondent_code, 
+            correspondents.name AS correspondent_name
         FROM cash
         INNER JOIN correspondents ON cash.correspondent_id = correspondents.id
         WHERE cash.id = :id_cash AND correspondent_id = :id_correspondent
@@ -125,15 +129,15 @@ try {
     $response["report"]["initial_box"] = round($accumulatedBalance);
     $response["report"]["cash"] = [
         "id" => intval($result["cash_id"]),
-        "name" => $result["cash_name"]
+        "name" => $result["cash_name"],
+        "open" => isset($result["cash_open"]) ? intval($result["cash_open"]) : null // 👈 1 abierto, 0 cerrado
     ];
 
     $response["report"]["correspondent"] = [
-        "id" => $id_correspondent, // 👈 ID explícito
+        "id" => $id_correspondent,
         "code" => $result["correspondent_code"],
         "name" => $result["correspondent_name"]
     ];
-
 
     // Consultar transacciones del día seleccionado
     $txStmt = $pdo->prepare("
