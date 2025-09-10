@@ -5,7 +5,7 @@
  */
 
 // Cambia manualmente este valor: true para desarrollo, false para producción
-$isDevelopment = true;
+$isDevelopment = false;
 
 // Ruta base de la API (backend)
 $baseUrlApi = $isDevelopment

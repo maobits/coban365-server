@@ -2,10 +2,10 @@
 -- version 5.2.1
 -- https://www.phpmyadmin.net/
 --
--- Servidor: 127.0.0.1:3306
--- Tiempo de generación: 23-07-2025 a las 08:56:37
--- Versión del servidor: 10.11.10-MariaDB-log
--- Versión de PHP: 7.2.34
+-- Servidor: localhost
+-- Tiempo de generación: 31-08-2025 a las 01:27:46
+-- Versión del servidor: 10.4.32-MariaDB
+-- Versión de PHP: 8.2.12
 
 SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
 START TRANSACTION;
@@ -18,7 +18,7 @@ SET time_zone = "+00:00";
 /*!40101 SET NAMES utf8mb4 */;
 
 --
--- Base de datos: `u429495711_coban365`
+-- Base de datos: `coban365`
 --
 
 -- --------------------------------------------------------
@@ -58,6 +58,73 @@ CREATE TABLE `cash` (
   `initial_amount` decimal(12,2) NOT NULL DEFAULT 0.00 COMMENT 'Monto de configuración inicial de la caja'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+--
+-- Volcado de datos para la tabla `cash`
+--
+
+INSERT INTO `cash` (`id`, `correspondent_id`, `cashier_id`, `name`, `capacity`, `state`, `created_at`, `updated_at`, `open`, `last_note`, `initial_amount`) VALUES
+(24, 23, 35, 'Caja 1', 10000000, 1, '2025-07-27 18:02:42', '2025-08-11 23:31:47', 1, 'Faltante en caja', 1000000.00),
+(25, 23, 36, 'Caja auxiliar', 10000000, 1, '2025-07-27 18:03:15', '2025-07-27 18:04:03', 0, 'Caja auxiliar', 1000000.00);
+
+-- --------------------------------------------------------
+
+--
+-- Estructura de tabla para la tabla `cash_balance`
+--
+
+CREATE TABLE `cash_balance` (
+  `id` bigint(20) UNSIGNED NOT NULL,
+  `correspondent_id` bigint(20) UNSIGNED NOT NULL,
+  `cash_id` bigint(20) UNSIGNED NOT NULL,
+  `cashier_id` bigint(20) UNSIGNED NOT NULL,
+  `balance_date` date NOT NULL,
+  `balance_time` time NOT NULL,
+  `details` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL CHECK (json_valid(`details`)),
+  `total_bills` decimal(16,2) NOT NULL DEFAULT 0.00,
+  `total_bundles` decimal(16,2) NOT NULL DEFAULT 0.00,
+  `total_coins` decimal(16,2) NOT NULL DEFAULT 0.00,
+  `total_effective` decimal(16,2) NOT NULL DEFAULT 0.00,
+  `current_cash` decimal(16,2) NOT NULL DEFAULT 0.00,
+  `diff_amount` decimal(16,2) NOT NULL DEFAULT 0.00,
+  `diff_status` enum('OK','SOBRANTE','FALTANTE') NOT NULL DEFAULT 'OK',
+  `frozen_box` tinyint(1) UNSIGNED NOT NULL DEFAULT 1,
+  `note` varchar(255) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ;
+
+--
+-- Volcado de datos para la tabla `cash_balance`
+--
+
+INSERT INTO `cash_balance` (`id`, `correspondent_id`, `cash_id`, `cashier_id`, `balance_date`, `balance_time`, `details`, `total_bills`, `total_bundles`, `total_coins`, `total_effective`, `current_cash`, `diff_amount`, `diff_status`, `frozen_box`, `note`, `created_at`, `updated_at`) VALUES
+(10, 12029, 24, 35, '2025-08-09', '01:03:35', '{\"header\":{\"correspondent_code\":\"12029\",\"correspondent_name\":\"BARRIO CENTENARIO\",\"cash\":{\"id\":24,\"name\":\"Caja 1\"},\"reported_at\":\"2025-08-11T06:03:35.665Z\"},\"sections\":{\"bills\":[{\"denom\":100000,\"count\":20,\"subtotal\":2000000},{\"denom\":50000,\"count\":18,\"subtotal\":900000},{\"denom\":20000,\"count\":0,\"subtotal\":0},{\"denom\":10000,\"count\":0,\"subtotal\":0},{\"denom\":5000,\"count\":0,\"subtotal\":0},{\"denom\":2000,\"count\":0,\"subtotal\":0},{\"denom\":1000,\"count\":0,\"subtotal\":0}],\"bundles\":[{\"denom\":100000,\"count\":0,\"units_per_bundle\":100,\"subtotal\":0},{\"denom\":50000,\"count\":0,\"units_per_bundle\":100,\"subtotal\":0},{\"denom\":20000,\"count\":0,\"units_per_bundle\":100,\"subtotal\":0},{\"denom\":10000,\"count\":0,\"units_per_bundle\":100,\"subtotal\":0},{\"denom\":5000,\"count\":0,\"units_per_bundle\":100,\"subtotal\":0},{\"denom\":2000,\"count\":0,\"units_per_bundle\":100,\"subtotal\":0},{\"denom\":1000,\"count\":0,\"units_per_bundle\":100,\"subtotal\":0}],\"coins\":[{\"denom\":1000,\"count\":0,\"subtotal\":0},{\"denom\":500,\"count\":0,\"subtotal\":0},{\"denom\":200,\"count\":0,\"subtotal\":0},{\"denom\":100,\"count\":0,\"subtotal\":0},{\"denom\":50,\"count\":0,\"subtotal\":0}]},\"subtotals\":{\"bills\":2900000,\"bundles\":0,\"coins\":0},\"totals\":{\"total_effective\":2900000,\"current_cash\":2900000,\"balance\":0,\"abs_diff\":0,\"message\":\"Cuadre OK\"}}', 2900000.00, 0.00, 0.00, 2900000.00, 2900000.00, 0.00, 'OK', 1, 'Cuadre OK', '2025-08-11 06:03:35', '2025-08-11 06:03:35'),
+(11, 12029, 24, 35, '2025-08-10', '01:43:14', '{\"header\":{\"correspondent_code\":\"12029\",\"correspondent_name\":\"BARRIO CENTENARIO\",\"cash\":{\"id\":24,\"name\":\"Caja 1\"},\"reported_at\":\"2025-08-11T06:43:14.517Z\"},\"sections\":{\"bills\":[{\"denom\":100000,\"count\":25,\"subtotal\":2500000},{\"denom\":50000,\"count\":0,\"subtotal\":0},{\"denom\":20000,\"count\":0,\"subtotal\":0},{\"denom\":10000,\"count\":0,\"subtotal\":0},{\"denom\":5000,\"count\":0,\"subtotal\":0},{\"denom\":2000,\"count\":0,\"subtotal\":0},{\"denom\":1000,\"count\":0,\"subtotal\":0}],\"bundles\":[{\"denom\":100000,\"count\":0,\"units_per_bundle\":100,\"subtotal\":0},{\"denom\":50000,\"count\":0,\"units_per_bundle\":100,\"subtotal\":0},{\"denom\":20000,\"count\":0,\"units_per_bundle\":100,\"subtotal\":0},{\"denom\":10000,\"count\":0,\"units_per_bundle\":100,\"subtotal\":0},{\"denom\":5000,\"count\":0,\"units_per_bundle\":100,\"subtotal\":0},{\"denom\":2000,\"count\":0,\"units_per_bundle\":100,\"subtotal\":0},{\"denom\":1000,\"count\":0,\"units_per_bundle\":100,\"subtotal\":0}],\"coins\":[{\"denom\":1000,\"count\":0,\"subtotal\":0},{\"denom\":500,\"count\":0,\"subtotal\":0},{\"denom\":200,\"count\":0,\"subtotal\":0},{\"denom\":100,\"count\":0,\"subtotal\":0},{\"denom\":50,\"count\":0,\"subtotal\":0}]},\"subtotals\":{\"bills\":2500000,\"bundles\":0,\"coins\":0},\"totals\":{\"total_effective\":2500000,\"current_cash\":3000000,\"balance\":-500000,\"abs_diff\":500000,\"message\":\"Faltante en caja\"}}', 2500000.00, 0.00, 0.00, 2500000.00, 3000000.00, -500000.00, 'FALTANTE', 1, 'Faltante en caja', '2025-08-11 06:43:14', '2025-08-11 06:43:14');
+
+-- --------------------------------------------------------
+
+--
+-- Estructura de tabla para la tabla `cash_closing_register`
+--
+
+CREATE TABLE `cash_closing_register` (
+  `id` bigint(20) UNSIGNED NOT NULL,
+  `cash_id` bigint(20) UNSIGNED NOT NULL,
+  `closing_date` date NOT NULL,
+  `closing_time` time NOT NULL,
+  `closed_by` bigint(20) UNSIGNED DEFAULT NULL,
+  `note` varchar(255) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Volcado de datos para la tabla `cash_closing_register`
+--
+
+INSERT INTO `cash_closing_register` (`id`, `cash_id`, `closing_date`, `closing_time`, `closed_by`, `note`, `created_at`) VALUES
+(9, 24, '2025-08-09', '01:03:35', 35, 'Cuadre OK', '2025-08-11 06:03:35'),
+(10, 24, '2025-08-10', '01:43:14', 35, 'Faltante en caja', '2025-08-11 06:43:14');
+
 -- --------------------------------------------------------
 
 --
@@ -78,6 +145,13 @@ CREATE TABLE `correspondents` (
   `state` tinyint(1) NOT NULL DEFAULT 1 COMMENT '1 = activo, 0 = inactivo',
   `premium` tinyint(1) NOT NULL DEFAULT 0 COMMENT '1 = Premium, 0 = Básico'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Volcado de datos para la tabla `correspondents`
+--
+
+INSERT INTO `correspondents` (`id`, `type_id`, `code`, `operator_id`, `name`, `location`, `created_at`, `updated_at`, `transactions`, `credit_limit`, `state`, `premium`) VALUES
+(23, 1, '12029', 34, 'BARRIO CENTENARIO', '{\"departamento\":\"Antioquia\",\"ciudad\":\"Caucacia\"}', '2025-07-23 20:35:21', '2025-07-23 20:35:33', '[{\"id\":7,\"name\":\"Abono a tarjeta de crédito\"},{\"id\":13,\"name\":\"Ahorro ALM\"},{\"id\":18,\"name\":\"Compensación\"},{\"id\":6,\"name\":\"Depósito\"},{\"id\":15,\"name\":\"Pago  a tercero\"},{\"id\":8,\"name\":\"Pago de crédito\"},{\"id\":17,\"name\":\"Pago de tercero\"},{\"id\":16,\"name\":\"Préstamo a tercero\"},{\"id\":14,\"name\":\"Préstamo de terceros\"},{\"id\":3,\"name\":\"Recaudos\"},{\"id\":5,\"name\":\"Retiro\"},{\"id\":9,\"name\":\"Retiro con tarjeta\"},{\"id\":10,\"name\":\"Retiro Nequi\"},{\"id\":11,\"name\":\"Saldo\"},{\"id\":12,\"name\":\"Transferencia\"},{\"id\":19,\"name\":\"Transferir a otra caja\"}]', 50000000, 1, 1);
 
 -- --------------------------------------------------------
 
@@ -102,6 +176,13 @@ CREATE TABLE `others` (
   `updated_at` timestamp NULL DEFAULT NULL ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+--
+-- Volcado de datos para la tabla `others`
+--
+
+INSERT INTO `others` (`id`, `correspondent_id`, `name`, `id_type`, `id_number`, `email`, `phone`, `address`, `credit`, `balance`, `negative_balance`, `state`, `created_at`, `updated_at`) VALUES
+(20, 23, 'Maobits', 'Cédula de Ciudadanía', '1061740164', 'admin@maobits.com', '3153774638', 'Calle 15', 1000000.00, 100000.00, 1, 1, '2025-08-08 04:28:00', NULL);
+
 -- --------------------------------------------------------
 
 --
@@ -115,6 +196,36 @@ CREATE TABLE `password_resets` (
   `expires_at` datetime NOT NULL,
   `created_at` datetime DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Estructura de tabla para la tabla `pos_calculator`
+--
+
+CREATE TABLE `pos_calculator` (
+  `id` bigint(20) UNSIGNED NOT NULL,
+  `cash_id` int(10) UNSIGNED NOT NULL,
+  `correspondent_id` int(10) UNSIGNED NOT NULL,
+  `cashier_id` int(10) UNSIGNED DEFAULT NULL,
+  `customer_name` varchar(120) DEFAULT NULL,
+  `customer_phone` varchar(40) DEFAULT NULL,
+  `subtotal` bigint(20) NOT NULL DEFAULT 0,
+  `discount` bigint(20) NOT NULL DEFAULT 0,
+  `fee` bigint(20) NOT NULL DEFAULT 0,
+  `total` bigint(20) NOT NULL DEFAULT 0,
+  `note` varchar(160) DEFAULT NULL,
+  `items_json` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`items_json`)),
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Volcado de datos para la tabla `pos_calculator`
+--
+
+INSERT INTO `pos_calculator` (`id`, `cash_id`, `correspondent_id`, `cashier_id`, `customer_name`, `customer_phone`, `subtotal`, `discount`, `fee`, `total`, `note`, `items_json`, `created_at`, `updated_at`) VALUES
+(2, 24, 23, 35, 'Mauricio chara', '3153774638', 750000, 0, 0, 750000, 'EXACTO', '{\"tasks\":[{\"name\":\"tarea 1\",\"value\":500000},{\"name\":\"tarea 2\",\"value\":250000}],\"denominations\":[{\"denom\":2000,\"qty\":250},{\"denom\":5000,\"qty\":50},{\"denom\":10000,\"qty\":0},{\"denom\":20000,\"qty\":0},{\"denom\":50000,\"qty\":0},{\"denom\":100000,\"qty\":0}],\"coins\":0}', '2025-08-15 18:24:38', '2025-08-15 18:24:53');
 
 -- --------------------------------------------------------
 
@@ -184,13 +295,25 @@ CREATE TABLE `transactions` (
   `cancellation_note` text DEFAULT NULL,
   `client_reference` varchar(255) DEFAULT NULL,
   `third_party_note` varchar(255) DEFAULT NULL,
+  `type_of_movement` text DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NULL DEFAULT NULL ON UPDATE current_timestamp(),
   `utility` decimal(12,2) NOT NULL DEFAULT 0.00 COMMENT 'Utilidad o ganancia de la transacción',
   `is_transfer` tinyint(1) NOT NULL DEFAULT 0 COMMENT '¿Es transferencia entre cajas?',
   `box_reference` int(11) DEFAULT NULL COMMENT 'Caja destino si es transferencia',
-  `transfer_status` tinyint(1) DEFAULT NULL COMMENT '1: aceptada, 0: rechazada'
+  `transfer_status` tinyint(1) DEFAULT NULL COMMENT '1: aceptada, 0: rechazada',
+  `cash_tag` decimal(15,2) DEFAULT NULL COMMENT 'Etiqueta de valor de caja'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Volcado de datos para la tabla `transactions`
+--
+
+INSERT INTO `transactions` (`id`, `id_cashier`, `id_cash`, `id_correspondent`, `transaction_type_id`, `polarity`, `neutral`, `cost`, `state`, `note`, `cancellation_note`, `client_reference`, `third_party_note`, `type_of_movement`, `created_at`, `updated_at`, `utility`, `is_transfer`, `box_reference`, `transfer_status`, `cash_tag`) VALUES
+(397, 1, 24, 23, 6, 1, 0, 100000.00, 1, '-', NULL, NULL, NULL, NULL, '2025-08-30 16:10:20', NULL, 0.00, 0, NULL, NULL, 1100000.00),
+(398, 1, 24, 23, 17, 1, 0, 50000.00, 1, 'Maobits', NULL, '20', 'charge_to_third_party', 'Entrega en efectivo', '2025-08-30 16:11:07', NULL, 0.00, 0, NULL, NULL, 1150000.00),
+(399, 1, 24, 23, 16, 0, 0, 50000.00, 1, 'Maobits', NULL, '20', 'loan_to_third_party', 'Entrega en efectivo', '2025-08-30 16:13:58', NULL, 0.00, 0, NULL, NULL, 1100000.00),
+(400, 1, 24, 23, 14, 1, 0, 50000.00, 1, 'Maobits', NULL, '20', 'loan_from_third_party', 'Entrega en efectivo', '2025-08-30 16:16:50', NULL, 0.00, 0, NULL, NULL, 1150000.00);
 
 -- --------------------------------------------------------
 
@@ -228,8 +351,7 @@ INSERT INTO `transaction_types` (`id`, `category`, `name`, `created_at`, `update
 (17, 'Terceros', 'Pago de tercero', '2025-05-24 03:54:11', '2025-05-24 03:54:11', 1),
 (18, 'Compensación', 'Compensación', '2025-05-26 00:32:38', '2025-05-26 00:32:38', 0),
 (19, 'Transferir', 'Transferir a otra caja', '2025-05-27 20:13:14', '2025-05-27 20:13:14', 0),
-(20, 'Ingresos', 'Transaccion prueba', '2025-06-01 16:58:35', '2025-06-01 16:58:35', 1),
-(21, 'Ingresos', 'Recarga Nequi', '2025-07-10 17:25:59', '2025-07-10 17:25:59', 1);
+(20, 'Ingresos', 'Transaccion prueba', '2025-06-01 16:58:35', '2025-06-01 16:58:35', 1);
 
 -- --------------------------------------------------------
 
@@ -280,7 +402,12 @@ CREATE TABLE `users` (
 --
 
 INSERT INTO `users` (`id`, `email`, `fullname`, `phone`, `password`, `status`, `role`, `permissions`, `correspondents`, `created_at`, `updated_at`) VALUES
-(1, 'admin@maobits.com', 'Mauricio Chara', '3153774638', '$2y$10$v7ruMRiDLqL0PUH36fbZxOl/jjhUQce48PhilInQzONA2bnAIC55W', 1, 'superadmin', '[\"manageCorrespondents\",\"manageAdministrators\",\"manageReports\",\"manageTransactions\",\"manageCorrespondent\"]', NULL, '2025-03-08 21:10:05', '2025-06-06 12:35:45');
+(1, 'admin@maobits.com', 'Mauricio Chara', '3153774638', '$2y$10$v7ruMRiDLqL0PUH36fbZxOl/jjhUQce48PhilInQzONA2bnAIC55W', 1, 'superadmin', '[\"manageCorrespondents\",\"manageAdministrators\",\"manageTransactions\",\"manageCorrespondent\"]', NULL, '2025-03-08 21:10:05', '2025-07-28 04:59:00'),
+(34, 'mauriciochara10k@gmail.com', 'Administrador', '+57 3153774638', '$2y$10$vey00uediNBkVddy.9YywuSCoUDaHzv8.fjmkh5Q0MyxlWxOljUeu', 1, 'admin', '[\"manageCorrespondent\"]', NULL, '2025-07-23 20:34:11', '2025-07-28 04:58:45'),
+(35, 'cajero1@gmail.com', 'Cajero 1', '124578', '$2y$10$m48/sADZLDPjFOOIcXa7re75lwaif5hrskb.C3FzUhpO03jvCy6W.', 1, 'cajero', '[\"manageCash\"]', '[{\"id\":23}]', '2025-07-23 20:36:54', '2025-07-23 20:36:54'),
+(36, 'cajero2@gmail.com', 'Cajero 2', '124578', '$2y$10$yZUtcd8pW7Btaztv4HLFAuMNWwVJxRteAwbLh8JvG/mUcroPB6.S2', 1, 'cajero', '[\"manageCash\"]', '[{\"id\":23}]', '2025-07-23 20:37:25', '2025-07-23 20:37:25'),
+(37, 'cajero3@gmail.com', 'Cajero 3', '124578', '$2y$10$DhVSNVTMycqVOJTEAqMaEuXV4T0zQTbvCV.EfrW9zWmK19Dtjv5AW', 1, 'cajero', '[\"manageCash\"]', '[{\"id\":23}]', '2025-07-23 20:38:10', '2025-07-23 20:38:10'),
+(38, 'cajero4@gmal.com', 'cajero4', '124578', '$2y$10$HBRLh7l7oNTGJsGQF00i4uxtmaelaijilyHO9Ck6gJXTD6kkb0Dzq', 1, 'cajero', '[\"manageCash\"]', '[{\"id\":23}]', '2025-07-23 20:39:02', '2025-07-23 20:39:27');
 
 --
 -- Índices para tablas volcadas
@@ -299,6 +426,23 @@ ALTER TABLE `cash`
   ADD PRIMARY KEY (`id`),
   ADD KEY `correspondent_id` (`correspondent_id`),
   ADD KEY `cashier_id` (`cashier_id`);
+
+--
+-- Indices de la tabla `cash_balance`
+--
+ALTER TABLE `cash_balance`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_cash_date` (`cash_id`,`balance_date`),
+  ADD KEY `idx_corr_date` (`correspondent_id`,`balance_date`),
+  ADD KEY `idx_cashier_dt` (`cashier_id`,`balance_date`),
+  ADD KEY `idx_cb_cash_date_frozen` (`cash_id`,`balance_date`,`frozen_box`);
+
+--
+-- Indices de la tabla `cash_closing_register`
+--
+ALTER TABLE `cash_closing_register`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_cash_date` (`cash_id`,`closing_date`);
 
 --
 -- Indices de la tabla `correspondents`
@@ -321,6 +465,15 @@ ALTER TABLE `others`
 ALTER TABLE `password_resets`
   ADD PRIMARY KEY (`id`),
   ADD KEY `user_id` (`user_id`);
+
+--
+-- Indices de la tabla `pos_calculator`
+--
+ALTER TABLE `pos_calculator`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_cash_id` (`cash_id`),
+  ADD KEY `idx_corr_id` (`correspondent_id`),
+  ADD KEY `idx_created` (`created_at`);
 
 --
 -- Indices de la tabla `rates`
@@ -383,22 +536,40 @@ ALTER TABLE `cash`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=26;
 
 --
+-- AUTO_INCREMENT de la tabla `cash_balance`
+--
+ALTER TABLE `cash_balance`
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT de la tabla `cash_closing_register`
+--
+ALTER TABLE `cash_closing_register`
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=11;
+
+--
 -- AUTO_INCREMENT de la tabla `correspondents`
 --
 ALTER TABLE `correspondents`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=26;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=24;
 
 --
 -- AUTO_INCREMENT de la tabla `others`
 --
 ALTER TABLE `others`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=43;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=25;
 
 --
 -- AUTO_INCREMENT de la tabla `password_resets`
 --
 ALTER TABLE `password_resets`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=14;
+
+--
+-- AUTO_INCREMENT de la tabla `pos_calculator`
+--
+ALTER TABLE `pos_calculator`
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
 
 --
 -- AUTO_INCREMENT de la tabla `rates`
@@ -416,13 +587,13 @@ ALTER TABLE `shifts`
 -- AUTO_INCREMENT de la tabla `transactions`
 --
 ALTER TABLE `transactions`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=614;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=401;
 
 --
 -- AUTO_INCREMENT de la tabla `transaction_types`
 --
 ALTER TABLE `transaction_types`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=22;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=21;
 
 --
 -- AUTO_INCREMENT de la tabla `types_correspondents`
@@ -434,7 +605,7 @@ ALTER TABLE `types_correspondents`
 -- AUTO_INCREMENT de la tabla `users`
 --
 ALTER TABLE `users`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=42;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=39;
 
 --
 -- Restricciones para tablas volcadas

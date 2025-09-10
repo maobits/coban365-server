@@ -6,8 +6,8 @@ date_default_timezone_set('America/Bogota'); // Hora local de Bogotá
  * Descripción: Registra una nueva transacción con utilidad, nombre de tipo, valor opcional client_reference y cash_tag.
  * Proyecto: COBAN365
  * Desarrollador: Mauricio Chara
- * Versión: 1.3.2
- * Fecha de actualización: 07-Ago-2025
+ * Versión: 1.4.0
+ * Fecha de actualización: 07-Sep-2025
  */
 
 header("Access-Control-Allow-Origin: *");
@@ -21,6 +21,137 @@ if ($_SERVER["REQUEST_METHOD"] === "OPTIONS") {
 }
 
 require_once "../../db.php";
+
+/* ======================= Utilidades de cálculo ======================= */
+
+/** Normaliza: minúsculas, sin tildes, sin dobles espacios. */
+function normalize_str(?string $s): string
+{
+    if ($s === null)
+        return '';
+    if (function_exists('iconv')) {
+        $tmp = @iconv('UTF-8', 'ASCII//TRANSLIT', $s);
+        if ($tmp !== false)
+            $s = $tmp;
+    } else {
+        $s = strtr($s, [
+            'á' => 'a',
+            'é' => 'e',
+            'í' => 'i',
+            'ó' => 'o',
+            'ú' => 'u',
+            'ñ' => 'n',
+            'Á' => 'A',
+            'É' => 'E',
+            'Í' => 'I',
+            'Ó' => 'O',
+            'Ú' => 'U',
+            'Ñ' => 'N'
+        ]);
+    }
+    $s = mb_strtolower($s);
+    $s = preg_replace('/\s+/', ' ', trim($s));
+    return $s ?: '';
+}
+
+/**
+ * Regla general “Ingresos” (Depósito, Recaudos, Abono TC, Pago crédito, Entrega en efectivo, etc.)
+ *  - 0.20% del valor (0.002)
+ *  - Mínimo $160
+ *  - Máximo $1.600
+ */
+function calcUtilityIncomes(float $amount): float
+{
+    if ($amount <= 0)
+        return 0.0;
+    if ($amount <= 80000)
+        return 160.0;
+    if ($amount >= 800000)
+        return 1600.0;
+    return round($amount * 0.002, 0);
+}
+
+/**
+ * Regla “Retiros” (Retiro, Retiro con tarjeta, Retiro Nequi):
+ *  - 1 .. 80.000  => $80
+ *  - >= 800.000   => $800
+ *  - (80.000, 800.000) => 0.10% (0.001)
+ */
+function calcUtilityWithdrawal(float $amount): float
+{
+    if ($amount <= 0)
+        return 0.0;
+    if ($amount <= 80000)
+        return 80.0;
+    if ($amount >= 800000)
+        return 800.0;
+    return round($amount * 0.001, 0);
+}
+
+/**
+ * Regla fallback (por si cae en otra categoría distinta a Ingresos/Retiros):
+ *  - 0.10%, Mín 80, Máx 800
+ */
+function calcUtilityFallback(float $amount): float
+{
+    if ($amount <= 0)
+        return 0.0;
+    if ($amount <= 80000)
+        return 80.0;
+    if ($amount >= 800000)
+        return 800.0;
+    return round($amount * 0.001, 0);
+}
+
+/**
+ * Determina la utilidad a partir de:
+ * 1) Category/name que contengan “ingreso(s)” → reglas de Ingresos (0.20%, min 160, max 1600)
+ * 2) Category/name que contengan “retiro(s)” → reglas de Retiros (0.10%, min 80, max 800)
+ * 3) Si no se puede determinar, aplica fallback 0.10%, min 80, max 800.
+ *
+ * Devuelve [float $utility, string $bucket] donde $bucket ∈ {incomes, withdrawals, fallback}
+ */
+function resolveUtilityByType(?string $typeName, ?string $category, float $amount): array
+{
+    $nName = normalize_str($typeName);
+    $nCat = normalize_str($category);
+
+    // Palabras clave (sin tildes) para decidir el “bucket”
+    $incomeKeys = ['ingreso', 'ingresos', 'deposito', 'recaudo', 'recaudos', 'abono a tarjeta', 'abono tarjeta', 'pago de credito', 'pago credito', 'entrega en efectivo'];
+    $withdrawKeys = ['retiro', 'retiros', 'retiro con tarjeta', 'retiro nequi', 'salida', 'salidas'];
+
+    $containsAny = function (string $haystack, array $needles): bool {
+        foreach ($needles as $needle) {
+            if ($needle !== '' && mb_strpos($haystack, $needle) !== false)
+                return true;
+        }
+        return false;
+    };
+
+    // 1) Decisión por categoría primero (más robusto si la BD clasifica bien)
+    if ($nCat !== '') {
+        if ($containsAny($nCat, $withdrawKeys)) {
+            return [calcUtilityWithdrawal($amount), 'withdrawals'];
+        }
+        if ($containsAny($nCat, $incomeKeys) || $nCat === 'ingresos' || $nCat === 'ingreso') {
+            return [calcUtilityIncomes($amount), 'incomes'];
+        }
+    }
+
+    // 2) Decisión por nombre del tipo
+    if ($nName !== '') {
+        if ($containsAny($nName, $withdrawKeys)) {
+            return [calcUtilityWithdrawal($amount), 'withdrawals'];
+        }
+        if ($containsAny($nName, $incomeKeys)) {
+            return [calcUtilityIncomes($amount), 'incomes'];
+        }
+    }
+
+    // 3) Fallback
+    return [calcUtilityFallback($amount), 'fallback'];
+}
+/* ===================== Fin utilidades de cálculo ===================== */
 
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
     $data = json_decode(file_get_contents("php://input"), true);
@@ -47,12 +178,11 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     $id_correspondent = intval($data["id_correspondent"]);
     $transaction_type_id = intval($data["transaction_type_id"]);
     $polarity = boolval($data["polarity"]);
-    $cost = floatval($data["cost"]);
-    $utility = isset($data["utility"]) ? floatval($data["utility"]) : 0;
+    $cost = floatval($data["cost"]); // puede venir 0
     $client_reference = isset($data["client_reference"]) ? $data["client_reference"] : null;
     $cash_tag = isset($data["cash_tag"]) ? floatval($data["cash_tag"]) : null; // 🆕 nuevo campo
     $state = 1;
-    $created_at = date("Y-m-d H:i:s"); // 🕒 Fecha actual con zona horaria Bogotá
+    $created_at = date("Y-m-d H:i:s"); // Bogotá
 
     try {
         // Obtener el nombre y categoría del tipo de transacción
@@ -69,10 +199,20 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             exit;
         }
 
-        $note = "-";
-        $neutral = (strtolower($type["category"]) === "otros") ? 1 : 0;
+        // === Monto base para la comisión ===
+        // Si cost <= 0 pero cash_tag viene con el valor real, úsalo.
+        $amountForFee = $cost;
+        if ($amountForFee <= 0 && $cash_tag !== null && $cash_tag > 0) {
+            $amountForFee = $cash_tag;
+        }
 
-        // Insertar transacción con fecha y cash_tag
+        // Calcular utilidad con nueva lógica de Ingresos/Retiros
+        [$utility, $bucket] = resolveUtilityByType($type["name"] ?? null, $type["category"] ?? null, $amountForFee);
+
+        $note = "-";
+        $neutral = (normalize_str($type["category"] ?? '') === 'otros') ? 1 : 0;
+
+        // Insertar transacción
         $stmt = $pdo->prepare("
             INSERT INTO transactions (
                 id_cashier, id_cash, id_correspondent,
@@ -103,7 +243,12 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             echo json_encode([
                 "success" => true,
                 "message" => "Transacción registrada exitosamente.",
-                "timestamp" => $created_at
+                "timestamp" => $created_at,
+                "calculated_utility" => $utility,
+                "type_name" => $type["name"],
+                "type_category" => $type["category"],
+                "amount_used_for_fee" => $amountForFee,
+                "rule_bucket" => $bucket
             ]);
         } else {
             echo json_encode([
