@@ -5,8 +5,8 @@
  *              agrupando cada tercero como una "caja" e incluyendo detalle por tercero.
  * Proyecto: COBAN365
  * Desarrollador: Mauricio Chara
- * Versión: 1.4.0
- * Fecha: 17-Ago-2025
+ * Versión: 1.6.2
+ * Fecha: 27-Sep-2025
  */
 
 header("Access-Control-Allow-Origin: *");
@@ -29,20 +29,40 @@ if (!isset($_GET["correspondent_id"])) {
 
 $correspondentId = intval($_GET["correspondent_id"]);
 $dateFilter = isset($_GET["date"]) ? trim($_GET["date"]) : null;
-
-/* ⬇️ NUEVO: parámetro opcional de cédula/id_number */
 $idNumberFilter = isset($_GET["id_number"]) ? trim($_GET["id_number"]) : null;
 
-// Validar formato de fecha YYYY-MM-DD si viene
-if ($dateFilter) {
-    $d = DateTime::createFromFormat('Y-m-d', $dateFilter);
-    if (!$d || $d->format('Y-m-d') !== $dateFilter) {
-        echo json_encode([
-            "success" => false,
-            "message" => "Formato de fecha inválido. Use YYYY-MM-DD."
-        ]);
-        exit();
-    }
+/* Rango de fechas opcional */
+$dateFrom = isset($_GET["date_from"]) ? trim($_GET["date_from"]) : null;
+$dateTo = isset($_GET["date_to"]) ? trim($_GET["date_to"]) : null;
+
+/* Validar formato de fechas YYYY-MM-DD */
+$checkDate = function (?string $s) {
+    if ($s === null || $s === '')
+        return true;
+    $d = DateTime::createFromFormat('Y-m-d', $s);
+    return ($d && $d->format('Y-m-d') === $s);
+};
+
+if (!$checkDate($dateFilter)) {
+    echo json_encode(["success" => false, "message" => "Formato de fecha inválido en 'date'. Use YYYY-MM-DD."]);
+    exit();
+}
+if (!$checkDate($dateFrom)) {
+    echo json_encode(["success" => false, "message" => "Formato de fecha inválido en 'date_from'. Use YYYY-MM-DD."]);
+    exit();
+}
+if (!$checkDate($dateTo)) {
+    echo json_encode(["success" => false, "message" => "Formato de fecha inválido en 'date_to'. Use YYYY-MM-DD."]);
+    exit();
+}
+
+/* Si vienen ambos extremos, validar que from <= to */
+if ($dateFrom && $dateTo && $dateFrom > $dateTo) {
+    echo json_encode([
+        "success" => false,
+        "message" => "'date_from' no puede ser mayor que 'date_to'."
+    ]);
+    exit();
 }
 
 require_once "../../db.php";
@@ -53,9 +73,14 @@ try {
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
     ]);
 
-    // Terceros del corresponsal (si viene id_number, filtra solo ese tercero)
+    /* Terceros del corresponsal (filtro opcional por id_number) */
     $thirdsSql = "
-        SELECT id, name, credit, balance, negative_balance
+        SELECT 
+            id, 
+            name, 
+            COALESCE(credit, 0)  AS credit, 
+            COALESCE(balance, 0) AS balance, 
+            COALESCE(negative_balance, 0) AS negative_balance
         FROM others
         WHERE correspondent_id = :id
     ";
@@ -76,9 +101,25 @@ try {
     $tot_balance = 0.0;
     $tot_available = 0.0;
 
-    // Agregados globales (magnitudes)
-    $tot_third_debt = 0.0; // deuda de terceros (magnitud, se considera negativa para el neto)
-    $tot_corresp_debt = 0.0; // deuda del corresponsal (magnitud, positiva para el neto)
+    /* Agregados globales (magnitudes) */
+    $tot_third_debt = 0.0;
+    $tot_corresp_debt = 0.0;
+
+    /* Agregados de comisiones + nuevo campo */
+    $tot_bank_commission = 0.0;
+    $tot_dispersion = 0.0;
+    $tot_total_commission = 0.0;
+    $tot_paid_total_commission = 0.0;
+    $tot_count_commissions_paid = 0;
+    $tot_total_balance_third = 0.0; // NUEVO
+
+    /* Construir cláusula temporal priorizando rango -> date -> hoy */
+    $appliedDate = [
+        "mode" => null,  // 'range' | 'lte' | 'today'
+        "date" => null,
+        "date_from" => null,
+        "date_to" => null
+    ];
 
     foreach ($thirdParties as $third) {
         $id = (int) $third["id"];
@@ -87,10 +128,10 @@ try {
         $rawBalance = (float) $third["balance"];
         $isNegative = ((int) $third["negative_balance"] === 1);
 
-        // Normalizar balance (si negative_balance=1, el saldo almacenado es negativo)
+        /* Normalizar balance (si negative_balance=1, el saldo almacenado es negativo) */
         $normalizedBalance = $isNegative ? -$rawBalance : $rawBalance;
 
-        // -------- Detalle de movimientos (incluye polarity) --------
+        /* Detalle de movimientos (incluye polarity) */
         $queryDetails = "
             SELECT 
                 t.id, 
@@ -99,9 +140,15 @@ try {
                 t.third_party_note, 
                 t.type_of_movement,
                 t.polarity,
-                t.cost, 
+                COALESCE(t.cost, 0) AS cost, 
                 t.note, 
-                t.created_at
+                t.created_at,
+                t.reference,
+                COALESCE(t.bank_commission, 0) AS bank_commission,
+                COALESCE(t.dispersion, 0) AS dispersion,
+                COALESCE(t.total_commission, 0) AS total_commission,
+                COALESCE(t.commission_paid, 0) AS commission_paid,
+                COALESCE(t.total_balance_third, 0) AS total_balance_third
             FROM transactions t
             LEFT JOIN transaction_types tt ON t.transaction_type_id = tt.id
             WHERE t.id_correspondent = :corr
@@ -114,30 +161,56 @@ try {
                   'loan_from_third_party'
               )
         ";
-        // ✅ ÚNICO CAMBIO: incluir todo hasta la fecha elegida o hasta HOY si no viene fecha
-        if ($dateFilter) {
-            $queryDetails .= " AND DATE(t.created_at) <= :filter_date";
+
+        /* Prioridad de filtros temporales */
+        $timeClause = "";
+        $timeParams = [];
+        if ($dateFrom || $dateTo) {
+            if ($dateFrom && $dateTo) {
+                $timeClause = " AND DATE(t.created_at) BETWEEN :date_from AND :date_to";
+                $timeParams[":date_from"] = $dateFrom;
+                $timeParams[":date_to"] = $dateTo;
+                $appliedDate = ["mode" => "range", "date" => null, "date_from" => $dateFrom, "date_to" => $dateTo];
+            } elseif ($dateFrom) {
+                $timeClause = " AND DATE(t.created_at) >= :date_from";
+                $timeParams[":date_from"] = $dateFrom;
+                $appliedDate = ["mode" => "range", "date" => null, "date_from" => $dateFrom, "date_to" => null];
+            } else { // solo date_to
+                $timeClause = " AND DATE(t.created_at) <= :date_to";
+                $timeParams[":date_to"] = $dateTo;
+                $appliedDate = ["mode" => "range", "date" => null, "date_from" => null, "date_to" => $dateTo];
+            }
+        } elseif ($dateFilter) {
+            $timeClause = " AND DATE(t.created_at) <= :filter_date";
+            $timeParams[":filter_date"] = $dateFilter;
+            $appliedDate = ["mode" => "lte", "date" => $dateFilter, "date_from" => null, "date_to" => null];
         } else {
-            $queryDetails .= " AND DATE(t.created_at) <= CURDATE()";
+            $timeClause = " AND DATE(t.created_at) <= CURDATE()";
+            $appliedDate = ["mode" => "today", "date" => date("Y-m-d"), "date_from" => null, "date_to" => null];
         }
-        $queryDetails .= " ORDER BY t.created_at DESC";
+
+        $queryDetails .= $timeClause . " ORDER BY t.created_at DESC";
 
         $stmtDetails = $pdo->prepare($queryDetails);
-        $execParams = [":corr" => $correspondentId, ":third" => $id];
-        if ($dateFilter) {
-            $execParams[":filter_date"] = $dateFilter;
-        }
+        $execParams = [":corr" => $correspondentId, ":third" => $id] + $timeParams;
         $stmtDetails->execute($execParams);
         $details = $stmtDetails->fetchAll();
 
-        // Totales efectivos por tipo considerando polarity para dirección contable
-        // polarity: 0 => suma deuda ; 1 => resta deuda
+        /* Totales efectivos por tipo considerando polarity */
         $debtEff = 0.0; // pagos a tercero
         $chargeEff = 0.0; // pagos de tercero
         $loanToEff = 0.0; // préstamo a tercero
         $loanFromEff = 0.0; // préstamo de tercero
 
-        foreach ($details as $m) {
+        /* Sumatorios por tercero (comisiones + nuevo campo) */
+        $sumBankCommission = 0.0;
+        $sumDispersion = 0.0;
+        $sumTotalCommission = 0.0;
+        $sumPaidTotalCommission = 0.0;
+        $countCommissionsPaid = 0;
+        $sumTotalBalanceThird = 0.0; // NUEVO
+
+        foreach ($details as &$m) {
             $amt = (float) $m["cost"];
             $sign = ((int) $m["polarity"] === 0) ? 1.0 : -1.0;
 
@@ -155,18 +228,33 @@ try {
                     $loanFromEff += $sign * $amt;
                     break;
             }
+
+            $bankCom = (float) $m["bank_commission"];
+            $disp = (float) $m["dispersion"];
+            $totCom = (float) $m["total_commission"];
+            $paid = (int) $m["commission_paid"];
+            $totBalThr = (float) $m["total_balance_third"];
+
+            /* Sumar magnitudes */
+            $sumBankCommission += abs($bankCom);
+            $sumDispersion += abs($disp);
+            $sumTotalCommission += abs($totCom);
+            $sumTotalBalanceThird += abs($totBalThr);
+
+            if ($paid === 1) {
+                $sumPaidTotalCommission += abs($totCom);
+                $countCommissionsPaid += 1;
+            }
+
+            /* Normalizar tipos (ya vienen casteados en el SELECT) */
+            $m["commission_paid"] = $paid === 1 ? 1 : 0;
         }
+        unset($m);
 
-        // -------- Magnitudes de deuda para sumarios --------
-        // Base por saldo inicial:
-        $thirdDebtBase = max(0.0, -$normalizedBalance); // tercero ya debía
-        $corpDebtBase = max(0.0, $normalizedBalance);   // corresponsal ya debía
+        /* Magnitudes de deuda para sumarios */
+        $thirdDebtBase = max(0.0, -$normalizedBalance);
+        $corpDebtBase = max(0.0, $normalizedBalance);
 
-        // Reglas de magnitud:
-        //  - loan_to_third_party   => aumenta deuda del tercero
-        //  - charge_to_third_party => reduce deuda del tercero
-        //  - debt_to_third_party   => aumenta deuda del corresponsal (y reduce la del tercero)
-        //  - loan_from_third_party => aumenta deuda del corresponsal
         $thirdDebt = $thirdDebtBase
             + abs($loanToEff)
             - abs($chargeEff)
@@ -175,26 +263,25 @@ try {
             $thirdDebt = 0.0;
 
         $correspDebt = $corpDebtBase
-            + abs($loanFromEff)   // préstamo recibido del tercero => corresponsal debe más
-            + abs($debtEff);      // pagos a tercero => corresponsal debe más
+            + abs($loanFromEff)
+            + abs($debtEff);
         if ($correspDebt < 0)
             $correspDebt = 0.0;
 
-        // Neto con convención: (+corresp) + (−third) = correspDebt - thirdDebt
         $netBalance = $correspDebt - $thirdDebt;
 
-        // Cupo disponible basado en el neto
+        /* Cupo disponible basado en el neto */
         $availableCredit = ($netBalance >= 0)
             ? $creditLimit
             : max(0.0, $creditLimit - abs($netBalance));
 
-        // Valores visuales por tipo (signos fijos para UI por renglón)
-        $debtDisplay = abs($debtEff);       // Pagos a tercero (mostrar +)
-        $chargeDisplay = abs($chargeEff);   // Pagos de tercero (mostrar +)
-        $loanToDisplay = -abs($loanToEff);  // Préstamo a tercero (mostrar −)
-        $loanFromDisplay = abs($loanFromEff); // Préstamo de tercero (mostrar +)
+        /* Valores visuales por tipo (signos fijos para UI) */
+        $debtDisplay = abs($debtEff);
+        $chargeDisplay = abs($chargeEff);
+        $loanToDisplay = -abs($loanToEff);
+        $loanFromDisplay = abs($loanFromEff);
 
-        // Arreglo del tercero en el resumen
+        /* Resumen por tercero */
         $summary[] = [
             "id" => $id,
             "name" => $name,
@@ -211,18 +298,32 @@ try {
             "third_party_debt" => $thirdDebt,
             "correspondent_debt" => $correspDebt,
             "negative_balance" => $isNegative,
+
+            /* Sumatorios por tercero */
+            "sum_bank_commission" => $sumBankCommission,
+            "sum_dispersion" => $sumDispersion,
+            "sum_total_commission" => $sumTotalCommission,
+            "sum_paid_total_commission" => $sumPaidTotalCommission,
+            "count_commissions_paid" => $countCommissionsPaid,
+            "sum_total_balance_third" => $sumTotalBalanceThird, // NUEVO
+
             "movements" => $details
         ];
 
-        // Totales globales
+        /* Totales globales */
         $tot_credit += $creditLimit;
         $tot_balance += $normalizedBalance;
         $tot_available += $availableCredit;
-        $tot_third_debt += $thirdDebt;     // magnitud
-        $tot_corresp_debt += $correspDebt;   // magnitud
+        $tot_third_debt += $thirdDebt;
+        $tot_corresp_debt += $correspDebt;
+        $tot_bank_commission += $sumBankCommission;
+        $tot_dispersion += $sumDispersion;
+        $tot_total_commission += $sumTotalCommission;
+        $tot_paid_total_commission += $sumPaidTotalCommission;
+        $tot_count_commissions_paid += $countCommissionsPaid;
+        $tot_total_balance_third += $sumTotalBalanceThird; // NUEVO
     }
 
-    // Neto total con la misma convención
     $tot_net = $tot_corresp_debt - $tot_third_debt;
 
     echo json_encode([
@@ -232,13 +333,23 @@ try {
             "correspondent_id" => $correspondentId,
             "generated_at" => date("Y-m-d H:i:s"),
             "filter_date" => $dateFilter,
+            "applied_date_filter" => $appliedDate, // información útil para auditoría/UI
             "total_third_parties" => count($summary),
             "total_credit_limit" => $tot_credit,
             "total_balance" => $tot_balance,
-            "total_net_balance" => $tot_net,              // (+corresp) + (−third)
+            "total_net_balance" => $tot_net,
             "total_available_credit" => $tot_available,
-            "total_third_party_debt" => $tot_third_debt,   // magnitud
-            "total_correspondent_debt" => $tot_corresp_debt, // magnitud
+            "total_third_party_debt" => $tot_third_debt,
+            "total_correspondent_debt" => $tot_corresp_debt,
+
+            /* Totales globales comisiones + nuevo campo */
+            "total_bank_commission" => $tot_bank_commission,
+            "total_dispersion" => $tot_dispersion,
+            "total_total_commission" => $tot_total_commission,
+            "total_paid_total_commission" => $tot_paid_total_commission,
+            "total_count_commissions_paid" => $tot_count_commissions_paid,
+            "total_total_balance_third" => $tot_total_balance_third, // NUEVO
+
             "third_party_summary" => $summary
         ]
     ]);
