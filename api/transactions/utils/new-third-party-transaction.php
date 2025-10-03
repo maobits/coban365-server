@@ -38,14 +38,14 @@ $client_reference = (int) $data["client_reference"]; // id del tercero
 $type_of_movement = trim($data["type_of_movement"]);
 $utility = isset($data["utility"]) ? (float) $data["utility"] : 0.0;
 $cash_tag = isset($data["cash_tag"]) ? (float) $data["cash_tag"] : null;
-$reference = isset($data["reference"]) ? trim($data["reference"]) : null; // ← opcional
+$reference = isset($data["reference"]) ? trim($data["reference"]) : null; // opcional
 $created_at = date("Y-m-d H:i:s");
 $state = 1;
 
-/** 1) Polarity por nota especial (misma lógica que antes) */
+/** 1) Polarity por nota especial */
 $polMap = [
-    "debt_to_third_party" => 0, // Pago a tercero  => valor negativo en el balance (sale plata)
-    "charge_to_third_party" => 1, // Pago de tercero => valor positivo en el balance (entra plata)
+    "debt_to_third_party" => 0, // Pago a tercero  => sale
+    "charge_to_third_party" => 1, // Pago de tercero => entra
     "loan_to_third_party" => 0, // Préstamo a tercero => sale
     "loan_from_third_party" => 1, // Préstamo de tercero => entra
 ];
@@ -55,8 +55,8 @@ if (!array_key_exists($third_party_note, $polMap)) {
 }
 $polarity = $polMap[$third_party_note];
 
-/** 2) Traer datos del tipo y nombre del tercero */
 try {
+    /** 2) Traer datos del tipo y nombre del tercero */
     $stmt = $pdo->prepare("SELECT name, category FROM transaction_types WHERE id = :id");
     $stmt->execute([":id" => $transaction_type_id]);
     $type = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -78,12 +78,12 @@ try {
 
     /** 3) Saldo anterior */
     $prev = $pdo->prepare("
-    SELECT total_balance_third
-    FROM transactions
-    WHERE id_correspondent = :c AND client_reference = :t AND state = 1
-    ORDER BY created_at DESC, id DESC
-    LIMIT 1
-  ");
+        SELECT total_balance_third
+        FROM transactions
+        WHERE id_correspondent = :c AND client_reference = :t AND state = 1
+        ORDER BY created_at DESC, id DESC
+        LIMIT 1
+    ");
     $prev->execute([":c" => $id_correspondent, ":t" => $client_reference]);
     $last = $prev->fetchColumn();
 
@@ -95,54 +95,93 @@ try {
         $prev_balance = ((int) $third["negative_balance"] === 1) ? -$rawBal : $rawBal;
     }
 
-    /** 4) Reglas de comisión (ejemplo genérico como tu hoja) */
-    $name = mb_strtolower($type_of_movement, 'UTF-8');
+    /** 4) Reglas de comisión **/
+    // Normalizador para detectar consignación / cosignación, etc.
+    $normalize = function ($s) {
+        $s = mb_strtolower($s, 'UTF-8');
+        $s = strtr($s, ['á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u', 'ä' => 'a', 'ë' => 'e', 'ï' => 'i', 'ö' => 'o', 'ü' => 'u', 'ñ' => 'n']);
+        $s = preg_replace('/[^a-z0-9\s]/u', '', $s);
+        $s = preg_replace('/\s+/', ' ', $s);
+        return trim($s);
+    };
+    $mov_norm = $normalize($type_of_movement);
 
-    // $17.000 para consignaciones y entrega en efectivo; $0 para lo demás
-    $bank_fixed = 0;
-    if (preg_match("/consignaci[óo]n|cajero|cb|entrega en efectivo/i", $type_of_movement)) {
-        $bank_fixed = 17000;
+    $triggers = [
+        'consignacion en sucursal',
+        'consignacion',
+        'cosignacion en sucursal',
+        'cosignacion',
+        'cajero',
+        'entrega en efectivo',
+        ' cb ',
+        'cb',
+    ];
+    $matchesTrigger = false;
+    foreach ($triggers as $k) {
+        if (strpos(' ' . $mov_norm . ' ', ' ' . $k . ' ') !== false) {
+            $matchesTrigger = true;
+            break;
+        }
     }
 
-    // Dispersión 0,001 para todos
-    $disp_pct = 0.001;
+    // Comisión fija por banco (17.000) y dispersión 0,001 SOLO en préstamo de tercero
+    $bank_fixed = 0;
+    if ($third_party_note === 'loan_from_third_party' && $matchesTrigger) {
+        $bank_fixed = 17000;
+    }
+    $disp_pct = ($third_party_note === 'loan_from_third_party') ? 0.001 : 0.0;
 
-    /** 5) Signos y redondeos */
-    $signed_value = ($polarity === 0) ? +$cost : -$cost;
+    /** Utilidad para limpiar -0 */
+    $zeroIfTiny = function ($v) {
+        return (abs($v) < 1e-7) ? 0.0 : $v; };
 
-    // comisión bancaria con signo contrario al valor
+    /** 5) Signos correctos para acumular bien */
+    // SALE (polarity 0) => negativo; ENTRA (polarity 1) => positivo
+    $signed_value = ($polarity === 0) ? -$cost : +$cost;
+
+    // Comisión bancaria con signo contrario al valor (costo restando)
     $bank_commission_abs = (float) $bank_fixed;
     $bank_commission = ($signed_value >= 0 ? -$bank_commission_abs : +$bank_commission_abs);
 
-    // dispersión = ceil(valor_abs * pct al millar) con signo contrario al valor
-    $disp_raw = abs($cost) * $disp_pct;                  // 800.000 * 0,001 = 800
-    $disp_ceil = ceil($disp_raw / 1000) * 1000;          // → 1.000
+    // Dispersión = ceil(valor_abs * pct al millar) con signo contrario al valor
+    $disp_raw = abs($cost) * $disp_pct;
+    $disp_ceil = ceil($disp_raw / 1000) * 1000;
     $dispersion = ($signed_value >= 0 ? -$disp_ceil : +$disp_ceil);
 
-    $total_commission = $bank_commission + $dispersion;
+    // Si no aplican, dejarlas exactamente en 0.0
+    if ($bank_fixed === 0) {
+        $bank_commission = 0.0;
+    }
+    if ($disp_pct == 0.0) {
+        $dispersion = 0.0;
+    }
+
+    $bank_commission = $zeroIfTiny($bank_commission);
+    $dispersion = $zeroIfTiny($dispersion);
+    $total_commission = $zeroIfTiny($bank_commission + $dispersion);
 
     /** 6) Nuevo saldo acumulado del tercero */
-    $effect = $signed_value + $total_commission;         // lo que suma/resta esta fila
-    $new_total_balance = $prev_balance + $effect;
+    $effect = $signed_value + $total_commission;    // si comisiones=0, effect = signed_value
+    $new_total_balance = $prev_balance + $effect;   // ACUMULA (no resetea)
 
-    /** 7) Insertar transacción con todos los campos */
+    /** 7) Insertar transacción */
     $sql = "
-    INSERT INTO transactions (
-      id_cashier, id_cash, id_correspondent,
-      transaction_type_id, polarity, cost,
-      state, note, third_party_note,
-      utility, neutral, client_reference,
-      created_at, cash_tag, type_of_movement,
-      reference, bank_commission, dispersion, total_commission, total_balance_third
-    ) VALUES (
-      :id_cashier, :id_cash, :id_correspondent,
-      :transaction_type_id, :polarity, :cost,
-      :state, :note, :third_party_note,
-      :utility, :neutral, :client_reference,
-      :created_at, :cash_tag, :type_of_movement,
-      :reference, :bank_commission, :dispersion, :total_commission, :total_balance_third
-    )
-  ";
+        INSERT INTO transactions (
+          id_cashier, id_cash, id_correspondent,
+          transaction_type_id, polarity, cost,
+          state, note, third_party_note,
+          utility, neutral, client_reference,
+          created_at, cash_tag, type_of_movement,
+          reference, bank_commission, dispersion, total_commission, total_balance_third
+        ) VALUES (
+          :id_cashier, :id_cash, :id_correspondent,
+          :transaction_type_id, :polarity, :cost,
+          :state, :note, :third_party_note,
+          :utility, :neutral, :client_reference,
+          :created_at, :cash_tag, :type_of_movement,
+          :reference, :bank_commission, :dispersion, :total_commission, :total_balance_third
+        )
+    ";
 
     $ins = $pdo->prepare($sql);
     $ok = $ins->execute([

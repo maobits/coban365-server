@@ -1,14 +1,5 @@
 <?php
-date_default_timezone_set('America/Bogota'); // 🕒 Hora local de Bogotá
-
-/**
- * Archivo: new-third-party-transaction.php
- * Descripción: Registra una transacción de terceros con client_reference, polaridad automática,
- *              type_of_movement, referencia y costos (comisión bancaria, dispersión, total).
- * Proyecto: COBAN365
- * Desarrollador: Mauricio Chara
- * Fecha: 25-May-2025 (actualizado con reference y costos)
- */
+date_default_timezone_set('America/Bogota');
 
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: POST, OPTIONS");
@@ -23,172 +14,179 @@ if ($_SERVER["REQUEST_METHOD"] === "OPTIONS") {
 require_once "../../db.php";
 
 if ($_SERVER["REQUEST_METHOD"] !== "POST") {
-    echo json_encode([
-        "success" => false,
-        "message" => "Método no permitido."
-    ]);
+    echo json_encode(["success" => false, "message" => "Método no permitido."]);
     exit;
 }
 
 $data = json_decode(file_get_contents("php://input"), true);
 
-if (
-    !isset(
-    $data["id_cashier"],
-    $data["id_cash"],
-    $data["id_correspondent"],
-    $data["transaction_type_id"],
-    $data["cost"],
-    $data["third_party_note"],
-    $data["client_reference"]
-)
-) {
-    echo json_encode([
-        "success" => false,
-        "message" => "Faltan campos obligatorios para registrar la transacción."
-    ]);
-    exit;
+$required = ["id_cashier", "id_cash", "id_correspondent", "transaction_type_id", "cost", "third_party_note", "client_reference", "type_of_movement"];
+foreach ($required as $k) {
+    if (!isset($data[$k])) {
+        echo json_encode(["success" => false, "message" => "Falta el campo obligatorio: $k"]);
+        exit;
+    }
 }
 
-$id_cashier = intval($data["id_cashier"]);
-$id_cash = intval($data["id_cash"]);
-$id_correspondent = intval($data["id_correspondent"]);
-$transaction_type_id = intval($data["transaction_type_id"]);
-$cost = floatval($data["cost"]);                         // Valor del movimiento (positivo)
+$id_cashier = (int) $data["id_cashier"];
+$id_cash = (int) $data["id_cash"];
+$id_correspondent = (int) $data["id_correspondent"];
+$transaction_type_id = (int) $data["transaction_type_id"];
+$cost = (float) $data["cost"];
 $third_party_note = trim($data["third_party_note"]);
-$client_reference = intval($data["client_reference"]);               // ID del tercero
-$utility = isset($data["utility"]) ? floatval($data["utility"]) : 0;
-$cash_tag = isset($data["cash_tag"]) ? floatval($data["cash_tag"]) : null;
-$type_of_movement = isset($data["type_of_movement"]) ? trim($data["type_of_movement"]) : null;
-
-// 🆕 Nuevos (opcionales en payload; si no llegan, se calculan/ponen 0)
-$reference = isset($data["reference"]) ? trim($data["reference"]) : null; // aparecerá como "Referencia 2"
-$bank_commission = isset($data["bank_commission"]) ? floatval($data["bank_commission"]) : 0.0; // se espera negativo si es costo
-$dispersion = isset($data["dispersion"]) ? floatval($data["dispersion"]) : 0.0;           // se espera negativo si es costo
-$total_commission = isset($data["total_commission"]) ? floatval($data["total_commission"]) : null; // suma de costos, negativo
-
-// Si no viene total_commission, lo computamos como suma de costos (negativa o 0)
-if ($total_commission === null) {
-    $total_commission = $bank_commission + $dispersion; // típicamente negativo
-}
-
-// 🆕 total del movimiento para el tercero en el reporte (cost + costos)
-$total_balance_third = isset($data["total_balance_third"])
-    ? floatval($data["total_balance_third"])
-    : ($cost + $bank_commission + $dispersion); // ej: 800.000 + 0 + (-1.000) = 799.000
-
+$client_reference = (int) $data["client_reference"]; // id del tercero
+$type_of_movement = trim($data["type_of_movement"]);
+$utility = isset($data["utility"]) ? (float) $data["utility"] : 0.0;
+$cash_tag = isset($data["cash_tag"]) ? (float) $data["cash_tag"] : null;
+$reference = isset($data["reference"]) ? trim($data["reference"]) : null; // ← opcional
+$created_at = date("Y-m-d H:i:s");
 $state = 1;
-$created_at = date("Y-m-d H:i:s"); // ⏰ Fecha y hora actual de Bogotá
 
-// Determinar polaridad automáticamente según la nota especial
-$expectedPolarityMap = [
-    "debt_to_third_party" => 0, // pago al tercero (sale caja)
-    "charge_to_third_party" => 1, // pago del tercero (entra caja)
-    "loan_to_third_party" => 0, // préstamo al tercero (sale caja)
-    "loan_from_third_party" => 1  // préstamo de tercero (entra caja)
+/** 1) Polarity por nota especial (misma lógica que antes) */
+$polMap = [
+    "debt_to_third_party" => 0, // Pago a tercero  => valor negativo en el balance (sale plata)
+    "charge_to_third_party" => 1, // Pago de tercero => valor positivo en el balance (entra plata)
+    "loan_to_third_party" => 0, // Préstamo a tercero => sale
+    "loan_from_third_party" => 1, // Préstamo de tercero => entra
 ];
-
-if (!array_key_exists($third_party_note, $expectedPolarityMap)) {
-    echo json_encode([
-        "success" => false,
-        "message" => "Nota especial de tercero no válida: '{$third_party_note}'."
-    ]);
+if (!array_key_exists($third_party_note, $polMap)) {
+    echo json_encode(["success" => false, "message" => "Nota de tercero inválida."]);
     exit;
 }
+$polarity = $polMap[$third_party_note];
 
-$polarity = $expectedPolarityMap[$third_party_note];
-
+/** 2) Traer datos del tipo y nombre del tercero */
 try {
-    // Consultar nombre del tipo de transacción
     $stmt = $pdo->prepare("SELECT name, category FROM transaction_types WHERE id = :id");
-    $stmt->bindParam(":id", $transaction_type_id, PDO::PARAM_INT);
-    $stmt->execute();
+    $stmt->execute([":id" => $transaction_type_id]);
     $type = $stmt->fetch(PDO::FETCH_ASSOC);
-
     if (!$type) {
-        echo json_encode([
-            "success" => false,
-            "message" => "El tipo de transacción no fue encontrado."
-        ]);
+        echo json_encode(["success" => false, "message" => "Tipo de transacción no encontrado."]);
         exit;
     }
 
-    // 🧾 Obtener el nombre del tercero para guardarlo en 'note'
-    $thirdStmt = $pdo->prepare("SELECT name FROM others WHERE id = :id");
-    $thirdStmt->bindParam(":id", $client_reference, PDO::PARAM_INT);
-    $thirdStmt->execute();
-    $third = $thirdStmt->fetch(PDO::FETCH_ASSOC);
+    $sthird = $pdo->prepare("SELECT name, balance, negative_balance FROM others WHERE id = :id");
+    $sthird->execute([":id" => $client_reference]);
+    $third = $sthird->fetch(PDO::FETCH_ASSOC);
+    if (!$third) {
+        echo json_encode(["success" => false, "message" => "Tercero no encontrado."]);
+        exit;
+    }
 
-    $note = $third && !empty($third["name"]) ? $third["name"] : $type["name"];
+    $note = !empty($third["name"]) ? $third["name"] : $type["name"];
     $neutral = (strtolower($type["category"]) === "otros") ? 1 : 0;
 
-    // Insertar transacción con referencia, costos y type_of_movement
-    $insert = $pdo->prepare("
-        INSERT INTO transactions (
-            id_cashier, id_cash, id_correspondent,
-            transaction_type_id, polarity, cost,
-            state, note, third_party_note,
-            utility, neutral, client_reference,
-            created_at, cash_tag, type_of_movement,
-            reference, bank_commission, dispersion, total_commission, total_balance_third
-        ) VALUES (
-            :id_cashier, :id_cash, :id_correspondent,
-            :transaction_type_id, :polarity, :cost,
-            :state, :note, :third_party_note,
-            :utility, :neutral, :client_reference,
-            :created_at, :cash_tag, :type_of_movement,
-            :reference, :bank_commission, :dispersion, :total_commission, :total_balance_third
-        )
-    ");
+    /** 3) Saldo anterior */
+    $prev = $pdo->prepare("
+    SELECT total_balance_third
+    FROM transactions
+    WHERE id_correspondent = :c AND client_reference = :t AND state = 1
+    ORDER BY created_at DESC, id DESC
+    LIMIT 1
+  ");
+    $prev->execute([":c" => $id_correspondent, ":t" => $client_reference]);
+    $last = $prev->fetchColumn();
 
-    $insert->bindParam(":id_cashier", $id_cashier, PDO::PARAM_INT);
-    $insert->bindParam(":id_cash", $id_cash, PDO::PARAM_INT);
-    $insert->bindParam(":id_correspondent", $id_correspondent, PDO::PARAM_INT);
-    $insert->bindParam(":transaction_type_id", $transaction_type_id, PDO::PARAM_INT);
-    $insert->bindParam(":polarity", $polarity, PDO::PARAM_BOOL);
-    $insert->bindParam(":cost", $cost);
-    $insert->bindParam(":state", $state, PDO::PARAM_INT);
-    $insert->bindParam(":note", $note, PDO::PARAM_STR);
-    $insert->bindParam(":third_party_note", $third_party_note, PDO::PARAM_STR);
-    $insert->bindParam(":utility", $utility);
-    $insert->bindParam(":neutral", $neutral, PDO::PARAM_BOOL);
-    $insert->bindParam(":client_reference", $client_reference, PDO::PARAM_INT);
-    $insert->bindParam(":created_at", $created_at);
-    $insert->bindParam(":cash_tag", $cash_tag);
+    if ($last !== false && $last !== null) {
+        $prev_balance = (float) $last;
+    } else {
+        // sin movimientos: partir del saldo guardado en others (normalizado)
+        $rawBal = (float) $third["balance"];
+        $prev_balance = ((int) $third["negative_balance"] === 1) ? -$rawBal : $rawBal;
+    }
 
-    $insert->bindParam(":type_of_movement", $type_of_movement, PDO::PARAM_STR);
-    $insert->bindParam(":reference", $reference, PDO::PARAM_STR);
-    $insert->bindParam(":bank_commission", $bank_commission);          // normalmente negativo si es costo
-    $insert->bindParam(":dispersion", $dispersion);                    // normalmente negativo si es costo
-    $insert->bindParam(":total_commission", $total_commission);        // normalmente negativo
-    $insert->bindParam(":total_balance_third", $total_balance_third);  // ej: 799000
+    /** 4) Reglas de comisión (ejemplo genérico como tu hoja) */
+    $name = mb_strtolower($type_of_movement, 'UTF-8');
 
-    if ($insert->execute()) {
+    // $17.000 para consignaciones y entrega en efectivo; $0 para lo demás
+    $bank_fixed = 0;
+    if (preg_match("/consignaci[óo]n|cajero|cb|entrega en efectivo/i", $type_of_movement)) {
+        $bank_fixed = 17000;
+    }
+
+    // Dispersión 0,001 para todos
+    $disp_pct = 0.001;
+
+    /** 5) Signos y redondeos */
+    $signed_value = ($polarity === 0) ? +$cost : -$cost;
+
+    // comisión bancaria con signo contrario al valor
+    $bank_commission_abs = (float) $bank_fixed;
+    $bank_commission = ($signed_value >= 0 ? -$bank_commission_abs : +$bank_commission_abs);
+
+    // dispersión = ceil(valor_abs * pct al millar) con signo contrario al valor
+    $disp_raw = abs($cost) * $disp_pct;                  // 800.000 * 0,001 = 800
+    $disp_ceil = ceil($disp_raw / 1000) * 1000;          // → 1.000
+    $dispersion = ($signed_value >= 0 ? -$disp_ceil : +$disp_ceil);
+
+    $total_commission = $bank_commission + $dispersion;
+
+    /** 6) Nuevo saldo acumulado del tercero */
+    $effect = $signed_value + $total_commission;         // lo que suma/resta esta fila
+    $new_total_balance = $prev_balance + $effect;
+
+    /** 7) Insertar transacción con todos los campos */
+    $sql = "
+    INSERT INTO transactions (
+      id_cashier, id_cash, id_correspondent,
+      transaction_type_id, polarity, cost,
+      state, note, third_party_note,
+      utility, neutral, client_reference,
+      created_at, cash_tag, type_of_movement,
+      reference, bank_commission, dispersion, total_commission, total_balance_third
+    ) VALUES (
+      :id_cashier, :id_cash, :id_correspondent,
+      :transaction_type_id, :polarity, :cost,
+      :state, :note, :third_party_note,
+      :utility, :neutral, :client_reference,
+      :created_at, :cash_tag, :type_of_movement,
+      :reference, :bank_commission, :dispersion, :total_commission, :total_balance_third
+    )
+  ";
+
+    $ins = $pdo->prepare($sql);
+    $ok = $ins->execute([
+        ":id_cashier" => $id_cashier,
+        ":id_cash" => $id_cash,
+        ":id_correspondent" => $id_correspondent,
+        ":transaction_type_id" => $transaction_type_id,
+        ":polarity" => $polarity,
+        ":cost" => $cost,
+        ":state" => $state,
+        ":note" => $note,
+        ":third_party_note" => $third_party_note,
+        ":utility" => $utility,
+        ":neutral" => $neutral,
+        ":client_reference" => $client_reference,
+        ":created_at" => $created_at,
+        ":cash_tag" => $cash_tag,
+        ":type_of_movement" => $type_of_movement,
+        ":reference" => $reference,
+        ":bank_commission" => $bank_commission,
+        ":dispersion" => $dispersion,
+        ":total_commission" => $total_commission,
+        ":total_balance_third" => $new_total_balance,
+    ]);
+
+    if ($ok) {
         echo json_encode([
             "success" => true,
-            "message" => "Transacción registrada exitosamente con referencia y costos.",
-            "timestamp" => $created_at,
-            "data" => [
-                "polarity" => $polarity,
-                "type_of_movement" => $type_of_movement,
-                "reference" => $reference,
+            "message" => "Transacción registrada.",
+            "calc" => [
+                "prev_balance" => $prev_balance,
+                "signed_value" => $signed_value,
                 "bank_commission" => $bank_commission,
                 "dispersion" => $dispersion,
                 "total_commission" => $total_commission,
-                "total_balance_third" => $total_balance_third
-            ]
+                "effect" => $effect,
+                "new_total_balance" => $new_total_balance
+            ],
+            "timestamp" => $created_at
         ]);
     } else {
-        echo json_encode([
-            "success" => false,
-            "message" => "Error al registrar la transacción."
-        ]);
+        echo json_encode(["success" => false, "message" => "Error al registrar la transacción."]);
     }
 
 } catch (PDOException $e) {
-    echo json_encode([
-        "success" => false,
-        "message" => "Error en la base de datos: " . $e->getMessage()
-    ]);
+    echo json_encode(["success" => false, "message" => "Error en la base de datos: " . $e->getMessage()]);
 }
-?>
