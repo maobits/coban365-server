@@ -305,7 +305,11 @@ try {
             "sum_total_commission" => $sumTotalCommission,
             "sum_paid_total_commission" => $sumPaidTotalCommission,
             "count_commissions_paid" => $countCommissionsPaid,
-            "sum_total_balance_third" => $sumTotalBalanceThird, // NUEVO
+            "sum_total_balance_third" => $sumTotalBalanceThird, // acumulado histórico
+
+            /* NUEVOS CAMPOS solicitados */
+            "total_commission" => $sumTotalCommission,
+            "total_balance_third" => $sumTotalBalanceThird,
 
             "movements" => $details
         ];
@@ -345,10 +349,10 @@ try {
             /* Totales globales comisiones + nuevo campo */
             "total_bank_commission" => $tot_bank_commission,
             "total_dispersion" => $tot_dispersion,
-            "total_total_commission" => $tot_total_commission,
+            "total_total_commission" => $tot_total_commission,  // total global
             "total_paid_total_commission" => $tot_paid_total_commission,
             "total_count_commissions_paid" => $tot_count_commissions_paid,
-            "total_total_balance_third" => $tot_total_balance_third, // NUEVO
+            "total_total_balance_third" => $tot_total_balance_third, // total global
 
             "third_party_summary" => $summary
         ]
