@@ -2,10 +2,10 @@
 /**
  * Archivo: third_party_balance_sheet.php
  * Descripción: Calcula el balance financiero de un tercero vinculado a un corresponsal
- *              y valida si tiene cupo disponible para registrar préstamos.
+ *              y valida si tiene cupo disponible para registrar préstamos. Devuelve también comisiones.
  * Proyecto: COBAN365
  * Desarrollador: Mauricio Chara
- * Versión: 1.3.9
+ * Versión: 1.4.0
  * Fecha de actualización: 27-Jun-2025
  */
 
@@ -33,15 +33,20 @@ $thirdPartyId = intval($_GET["third_party_id"]);
 require_once "../../db.php";
 
 try {
-    $pdo = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8", $username, $password);
-    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    $pdo = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8", $username, $password, [
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+    ]);
 
-    // Obtener cupo, balance y si es negativo
-    $creditQuery = "SELECT credit, balance, negative_balance FROM others WHERE id = :thirdPartyId LIMIT 1";
-    $creditStmt = $pdo->prepare($creditQuery);
-    $creditStmt->bindParam(":thirdPartyId", $thirdPartyId, PDO::PARAM_INT);
-    $creditStmt->execute();
-    $creditData = $creditStmt->fetch(PDO::FETCH_ASSOC);
+    // 1) Cupo, balance almacenado y si el saldo se guarda como negativo
+    $creditStmt = $pdo->prepare("
+        SELECT credit, balance, negative_balance
+        FROM others
+        WHERE id = :thirdPartyId
+        LIMIT 1
+    ");
+    $creditStmt->execute([":thirdPartyId" => $thirdPartyId]);
+    $creditData = $creditStmt->fetch();
 
     if (!$creditData) {
         echo json_encode([
@@ -51,18 +56,16 @@ try {
         exit();
     }
 
-    $creditLimit = floatval($creditData["credit"]);
-    $balance = floatval($creditData["balance"]);
-    $isNegative = intval($creditData["negative_balance"]) === 1;
+    $creditLimit = (float) $creditData["credit"];
+    $balance = (float) $creditData["balance"];
+    $isNegative = ((int) $creditData["negative_balance"] === 1);
 
-    // Consulta agrupada por nota
-    $query = "
-        SELECT 
-            third_party_note,
-            SUM(cost) AS total
+    // 2) Sumas por tipo de nota (cost)
+    $stmt = $pdo->prepare("
+        SELECT third_party_note, SUM(cost) AS total
         FROM transactions
-        WHERE id_correspondent = :correspondentId
-          AND client_reference = :thirdPartyId
+        WHERE id_correspondent = :corr
+          AND client_reference   = :third
           AND state = 1
           AND third_party_note IN (
               'debt_to_third_party',
@@ -71,48 +74,82 @@ try {
               'loan_from_third_party'
           )
         GROUP BY third_party_note
-    ";
-
-    $stmt = $pdo->prepare($query);
-    $stmt->bindParam(":correspondentId", $correspondentId, PDO::PARAM_INT);
-    $stmt->bindParam(":thirdPartyId", $thirdPartyId, PDO::PARAM_INT);
-    $stmt->execute();
-
+    ");
+    $stmt->execute([":corr" => $correspondentId, ":third" => $thirdPartyId]);
     $results = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
 
-    // Obtener cada valor o 0
-    $debt = floatval($results["debt_to_third_party"] ?? 0);
-    $charge = floatval($results["charge_to_third_party"] ?? 0);
-    $loanTo = floatval($results["loan_to_third_party"] ?? 0);
-    $loanFrom = floatval($results["loan_from_third_party"] ?? 0);
+    $debt = (float) ($results["debt_to_third_party"] ?? 0.0);
+    $charge = (float) ($results["charge_to_third_party"] ?? 0.0);
+    $loanTo = (float) ($results["loan_to_third_party"] ?? 0.0);
+    $loanFrom = (float) ($results["loan_from_third_party"] ?? 0.0);
 
-    // 2️⃣ Saldo neto
+    // 3) Comisiones (sumas firmadas y magnitudes)
+    $feeStmt = $pdo->prepare("
+        SELECT
+            COALESCE(SUM(bank_commission), 0)            AS bank_commission_signed,
+            COALESCE(SUM(dispersion), 0)                 AS dispersion_signed,
+            COALESCE(SUM(total_commission), 0)           AS total_commission_signed,
+            COALESCE(SUM(ABS(bank_commission)), 0)       AS bank_commission_abs,
+            COALESCE(SUM(ABS(dispersion)), 0)            AS dispersion_abs,
+            COALESCE(SUM(ABS(total_commission)), 0)      AS total_commission_abs
+        FROM transactions
+        WHERE id_correspondent = :corr
+          AND client_reference  = :third
+          AND state = 1
+          AND third_party_note IN (
+              'debt_to_third_party',
+              'charge_to_third_party',
+              'loan_to_third_party',
+              'loan_from_third_party'
+          )
+    ");
+    $feeStmt->execute([":corr" => $correspondentId, ":third" => $thirdPartyId]);
+    $fees = $feeStmt->fetch() ?: [
+        "bank_commission_signed" => 0,
+        "dispersion_signed" => 0,
+        "total_commission_signed" => 0,
+        "bank_commission_abs" => 0,
+        "dispersion_abs" => 0,
+        "total_commission_abs" => 0,
+    ];
+
+    // 4) Saldo neto (misma lógica que ya usabas; no modificamos por comisiones aquí)
+    //    Nota: el balance almacenado se normaliza según negative_balance.
     $netBalance = ($isNegative ? $balance : -$balance) + $loanTo + $debt - $charge - $loanFrom;
 
+    // 5) Cupo disponible (misma lógica)
+    $availableCredit = $netBalance >= 0 ? max(0, $creditLimit - $netBalance) : $creditLimit;
 
-    // 3️⃣ Cupo disponible = crédito - deuda actual (si está en deuda)
-    $availableCredit = $netBalance >= 0
-        ? max(0, $creditLimit - $netBalance)
-        : $creditLimit;
-
-    // 4️⃣ Acción semántica
+    // 6) Acción semántica
     $correspondentAction = $netBalance > 0 ? "cobra" : ($netBalance < 0 ? "paga" : "sin_saldo");
 
-    // 5️⃣ Preparar datos de salida
+    // 7) Respuesta
     $data = [
+        // Montos por tipo de movimiento
         "debt_to_third_party" => $debt,
         "charge_to_third_party" => $charge,
         "loan_to_third_party" => $loanTo,
         "loan_from_third_party" => $loanFrom,
+
+        // Comisiones (firmadas y como magnitud positiva)
+        "bank_commission" => (float) $fees["bank_commission_signed"],
+        "dispersion" => (float) $fees["dispersion_signed"],
+        "total_commission" => (float) $fees["total_commission_signed"],
+
+        "sum_bank_commission" => (float) $fees["bank_commission_abs"],
+        "sum_dispersion" => (float) $fees["dispersion_abs"],
+        "sum_total_commission" => (float) $fees["total_commission_abs"],
+
+        // Saldos / cupos
         "available_credit" => $availableCredit,
         "credit_limit" => $creditLimit,
         "balance" => $isNegative ? -$balance : $balance,
         "net_balance" => $netBalance,
         "negative_balance" => $isNegative,
-        "correspondent_action" => $correspondentAction
+        "correspondent_action" => $correspondentAction,
     ];
 
-    // 6️⃣ Validación de cupo
+    // 8) Validación de cupo
     if ($availableCredit <= 0) {
         echo json_encode([
             "success" => false,
@@ -122,7 +159,6 @@ try {
         exit();
     }
 
-    // ✅ Respuesta exitosa
     echo json_encode([
         "success" => true,
         "message" => "Cálculo de balance exitoso.",
