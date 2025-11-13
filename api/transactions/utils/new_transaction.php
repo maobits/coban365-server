@@ -199,6 +199,71 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             exit;
         }
 
+        /* ======================================================
+         *  REGLA ESPECIAL: SOLO PARA "Retiro comisiones"
+         *  - Se valida SOLO contra cost
+         *  - Si no hay comisiones acumuladas (suma = 0) -> error
+         *  - Si cost > suma acumulada -> error
+         *  - Si pasa, se descuenta del pool third_party_commissions
+         * ====================================================== */
+        $normalizedTypeName = normalize_str($type["name"] ?? '');
+        $isCommissionWithdrawal = ($normalizedTypeName === 'retiro comisiones');
+
+        if ($isCommissionWithdrawal) {
+            // 1) cost debe ser > 0
+            if ($cost <= 0) {
+                echo json_encode([
+                    "success" => false,
+                    "error" => "INVALID_COMMISSION_COST",
+                    "message" => "El valor del retiro de comisiones debe ser mayor a 0."
+                ]);
+                exit;
+            }
+
+            // 2) Consultar total de comisiones acumuladas del corresponsal
+            $commStmt = $pdo->prepare("
+                SELECT COALESCE(SUM(total_commission), 0) AS total_commission
+                FROM third_party_commissions
+                WHERE correspondent_id = :cid
+            ");
+            $commStmt->bindParam(":cid", $id_correspondent, PDO::PARAM_INT);
+            $commStmt->execute();
+            $commRow = $commStmt->fetch(PDO::FETCH_ASSOC);
+
+            $availableCommission = isset($commRow["total_commission"])
+                ? floatval($commRow["total_commission"])
+                : 0.0;
+
+            // 3) Si no hay comisiones acumuladas
+            if ($availableCommission <= 0) {
+                echo json_encode([
+                    "success" => false,
+                    "error" => "NO_COMMISSION_AVAILABLE",
+                    "message" => "Este corresponsal no tiene comisiones acumuladas para retirar.",
+                    "available_commission" => $availableCommission,
+                    "requested_cost" => $cost,
+                    "id_correspondent" => $id_correspondent
+                ]);
+                exit;
+            }
+
+            // 4) Si intentan retirar más de lo acumulado
+            if ($cost > $availableCommission) {
+                echo json_encode([
+                    "success" => false,
+                    "error" => "COMMISSION_WITHDRAWAL_EXCEEDS_TOTAL",
+                    "message" => "No es posible registrar el retiro de comisiones porque el valor solicitado supera las comisiones acumuladas.",
+                    "available_commission" => $availableCommission,
+                    "requested_cost" => $cost,
+                    "id_correspondent" => $id_correspondent
+                ]);
+                exit;
+            }
+
+            // ⚠️ Aquí ya NO se descuenta en PHP.
+            // El descuento real se hace en el trigger AFTER INSERT de MySQL.
+        }
+
         // === Monto base para la comisión ===
         // Si cost <= 0 pero cash_tag viene con el valor real, úsalo.
         $amountForFee = $cost;

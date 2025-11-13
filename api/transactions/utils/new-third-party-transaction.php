@@ -133,7 +133,8 @@ try {
 
     /** Utilidad para limpiar -0 */
     $zeroIfTiny = function ($v) {
-        return (abs($v) < 1e-7) ? 0.0 : $v; };
+        return (abs($v) < 1e-7) ? 0.0 : $v;
+    };
 
     /** 5) Signos correctos para acumular bien */
     // SALE (polarity 0) => negativo; ENTRA (polarity 1) => positivo
@@ -224,6 +225,59 @@ try {
         ]);
     } else {
         echo json_encode(["success" => false, "message" => "Error al registrar la transacción."]);
+    }
+
+    /* ============================================================
+     * [NUEVO ACUMULADOR] Registrar comisión en third_party_commissions
+     * SOLO si es préstamo de tercero (entra dinero al corresponsal)
+     * y hubo costos de comisión (>0 en magnitud)
+     * ============================================================ */
+    if ($third_party_note === 'loan_from_third_party') {
+        // Magnitud positiva a sumar al acumulador:
+        $commissionMagnitude = abs($total_commission); // ej: -18000 -> 18000
+        if ($commissionMagnitude > 0) {
+            // 1. Asegurar fila (third_party_id, correspondent_id) exista
+            $check = $pdo->prepare("
+                SELECT id, total_commission
+                FROM third_party_commissions
+                WHERE third_party_id = :t
+                  AND correspondent_id = :c
+                LIMIT 1
+            ");
+            $check->execute([
+                ":t" => $client_reference,
+                ":c" => $id_correspondent
+            ]);
+            $row = $check->fetch(PDO::FETCH_ASSOC);
+
+            if ($row) {
+                // 2.a Ya existe → UPDATE sumando
+                $upd = $pdo->prepare("
+                    UPDATE third_party_commissions
+                    SET total_commission = total_commission + :amt,
+                        last_update = NOW()
+                    WHERE id = :id
+                    LIMIT 1
+                ");
+                $upd->execute([
+                    ":amt" => $commissionMagnitude,
+                    ":id" => $row["id"]
+                ]);
+            } else {
+                // 2.b No existe → INSERT con ese monto inicial
+                $ins2 = $pdo->prepare("
+                    INSERT INTO third_party_commissions
+                      (third_party_id, correspondent_id, total_commission, last_update)
+                    VALUES
+                      (:t, :c, :amt, NOW())
+                ");
+                $ins2->execute([
+                    ":t" => $client_reference,
+                    ":c" => $id_correspondent,
+                    ":amt" => $commissionMagnitude
+                ]);
+            }
+        }
     }
 
 } catch (PDOException $e) {
